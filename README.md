@@ -229,35 +229,16 @@ The scoring logic is in the Format Prompt nodes. You can adjust:
 
 ## Architecture
 
-```
-┌─────────────────┐     ┌─────────────────┐
-│   Job Sources   │     │   Job Sources   │
-│  (8 providers)  │     │  (specialized)  │
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         v                       v
-┌─────────────────┐     ┌─────────────────┐
-│ Normalize/Dedup │     │ Normalize/Dedup │
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         v                       v
-┌─────────────────┐     ┌─────────────────┐
-│   AI Scoring    │     │   AI Scoring    │
-│ (Gemini/Claude) │     │  (Dream roles)  │
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         v                       v
-┌─────────────────────────────────────────┐
-│            Notion Database              │
-│         (Central job tracker)           │
-└─────────┬───────────────────────────────┘
-          │
-          v
-┌─────────────────┐     ┌─────────────────┐
-│ Doc Generator   │────>│  Google Docs    │
-│   (monitors)    │     │ (resume/cover)  │
-└─────────────────┘     └─────────────────┘
-```
+See [WORKFLOW_DIAGRAMS.md](WORKFLOW_DIAGRAMS.md) for detailed visual representations of each workflow.
+
+### Quick Overview
+
+- **Job Sources**: 8+ APIs (LinkedIn, Indeed, JSearch, Adzuna, Remote OK, Remotive, The Muse)
+- **Daily Scout**: Runs at 7AM, broad search, scores all jobs, filters >45
+- **Dream Scout**: Runs at 8AM, targeted senior roles, filters >80
+- **Doc Generator**: Every 10 min, monitors for "Applying" status
+- **Apply Nudge**: Daily 5PM reminder of new high-scoring jobs
+- **Central Storage**: Notion database tracks all jobs and applications
 
 ## Troubleshooting
 
