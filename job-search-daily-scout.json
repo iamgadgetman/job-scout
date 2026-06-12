@@ -1,0 +1,1226 @@
+{
+  "updatedAt": "2026-06-12T04:18:15.000Z",
+  "createdAt": "2026-03-29T03:05:38.401Z",
+  "id": "QdbiVxedEjuqIIHu",
+  "name": "Job Search - Daily Scout",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 14 * * *"
+            }
+          ]
+        }
+      },
+      "id": "n1",
+      "name": "Daily 7AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "path": "job-search",
+        "options": {}
+      },
+      "id": "n2",
+      "name": "On Demand",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        432
+      ],
+      "webhookId": "1d0bf536-6e65-444a-9134-f6aa08d606e6"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\nlet allJobs = [];\n\nfor (const item of items) {\n  const d = item.json;\n\n  // \u2500\u2500 JSearch (object with d.data array) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  if (d.data && Array.isArray(d.data)) {\n    for (const j of d.data) {\n      allJobs.push({\n        job_id:      'jsearch_' + j.job_id,\n        title:       j.job_title || '',\n        company:     j.employer_name || '',\n        location:    j.job_is_remote ? 'Remote' : `${j.job_city||''} ${j.job_country||''}`.trim(),\n        is_remote:   j.job_is_remote === true,\n        apply_url:   j.job_apply_link || '',\n        description: (j.job_description || '').substring(0, 3000),\n        salary_min:  j.job_min_salary || null,\n        salary_max:  j.job_max_salary || null,\n        salary_text: '',\n        posted_date: j.job_posted_at_timestamp\n          ? new Date(j.job_posted_at_timestamp * 1000).toISOString().split('T')[0] : '',\n        source: 'JSearch'\n      });\n    }\n  }\n\n  // \u2500\u2500 Adzuna (results array + count number) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  else if (d.results && Array.isArray(d.results) && typeof d.count === 'number') {\n    for (const j of d.results) {\n      allJobs.push({\n        job_id:      'adzuna_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.title || '',\n        company:     (j.company && j.company.display_name) || '',\n        location:    (j.location && j.location.display_name) || '',\n        is_remote:   ((j.title||'') + ' ' + (j.description||'')).toLowerCase().includes('remote'),\n        apply_url:   j.redirect_url || '',\n        description: (j.description || '').substring(0, 3000),\n        salary_min:  j.salary_min || null,\n        salary_max:  j.salary_max || null,\n        salary_text: '',\n        posted_date: j.created ? j.created.split('T')[0] : '',\n        source: 'Adzuna'\n      });\n    }\n  }\n\n  // \u2500\u2500 The Muse (results array + page number) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  else if (d.results && Array.isArray(d.results) && typeof d.page === 'number') {\n    for (const j of d.results) {\n      if (!j.name) continue;\n      allJobs.push({\n        job_id:      'muse_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.name || '',\n        company:     (j.company && j.company.name) || '',\n        location:    'Remote',\n        is_remote:   true,\n        apply_url:   (j.refs && j.refs.landing_page) || '',\n        description: (j.contents || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n        salary_min:  null,\n        salary_max:  null,\n        salary_text: '',\n        posted_date: j.publication_date ? j.publication_date.split('T')[0] : '',\n        source: 'TheMuse'\n      });\n    }\n  }\n\n  // \u2500\u2500 Remotive (jobs array) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  else if (d.jobs && Array.isArray(d.jobs)) {\n    for (const j of d.jobs) {\n      allJobs.push({\n        job_id:      'remotive_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.title || '',\n        company:     j.company_name || '',\n        location:    j.candidate_required_location || 'Remote',\n        is_remote:   true,\n        apply_url:   j.url || '',\n        description: (j.description || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n        salary_min:  null,\n        salary_max:  null,\n        salary_text: j.salary || '',\n        posted_date: j.publication_date ? j.publication_date.split('T')[0] : '',\n        source: 'Remotive'\n      });\n    }\n  }\n\n  // \u2500\u2500 Indeed via RapidAPI (hits array) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  else if (d.hits && Array.isArray(d.hits)) {\n    for (const j of d.hits) {\n      allJobs.push({\n        job_id:      'indeed_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.title || '',\n        company:     j.company || '',\n        location:    (j.location||'').toLowerCase().includes('remote') ? 'Remote' : (j.location || ''),\n        is_remote:   (j.location||'').toLowerCase().includes('remote')\n                  || ((j.title||'') + ' ' + (j.description||j.summary||'')).toLowerCase().includes('remote'),\n        apply_url:   j.url || j.link || '',\n        description: (j.description || j.summary || j.snippet || '').substring(0, 3000),\n        salary_min:  null,\n        salary_max:  null,\n        salary_text: j.salary || '',\n        posted_date: j.date || j.datePosted || '',\n        source: 'Indeed'\n      });\n    }\n  }\n\n\n  \n  // \u2500\u2500 LinkedIn Job Search API (active-jb-24h) \u2014 array of rich objects \u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  else if (Array.isArray(d) && d.length > 0 && d[0].date_posted !== undefined && d[0].organization !== undefined) {\n    for (const j of d) {\n      if (!j.title) continue;\n\n      // Build location string\n      const locs = j.locations_derived || [];\n      const locStr = locs.length > 0 ? locs[0] : '';\n\n      // Remote detection: remote_derived flag, location_type TELECOMMUTE, or \"remote\" in loc/description\n      const descLower = (j.description_text || '').toLowerCase().substring(0, 500);\n      const isRemote = j.remote_derived === true\n        || j.location_type === 'TELECOMMUTE'\n        || locStr.toLowerCase().includes('remote')\n        || descLower.includes('remote');\n\n      // Salary: salary_raw is a structured object {value: [{value, unitText, currency, ...}]}\n      let salMin = null, salMax = null, salText = '';\n      if (j.salary_raw && j.salary_raw.value) {\n        const vals = j.salary_raw.value;\n        if (vals.length === 1) {\n          salMin = vals[0].value || null;\n          salText = vals[0].currency ? `${vals[0].currency} ${vals[0].value}` : String(vals[0].value || '');\n        } else if (vals.length >= 2) {\n          salMin = Math.min(...vals.map(v => v.value || 0).filter(v => v > 0)) || null;\n          salMax = Math.max(...vals.map(v => v.value || 0)) || null;\n        }\n      }\n\n      allJobs.push({\n        job_id:      'linkedin_' + (j.id || Math.random().toString(36).substr(2, 9)),\n        title:       j.title || '',\n        company:     j.organization || '',\n        location:    isRemote ? 'Remote' : locStr,\n        is_remote:   isRemote,\n        apply_url:   j.external_apply_url || j.url || '',\n        description: (j.description_text || '').substring(0, 3000),\n        salary_min:  salMin,\n        salary_max:  salMax,\n        salary_text: salText,\n        posted_date: j.date_posted ? j.date_posted.split('T')[0] : '',\n        source: 'LinkedIn'\n      });\n    }\n  }\n\n\n  // \u2500\u2500 LinkedIn individual job object (n8n splits array \u2192 one item per job) \u2500\u2500\n  else if (d.linkedin_id !== undefined && d.organization !== undefined && d.title) {\n    const locs = d.locations_derived || [];\n    const locStr = locs.length > 0 ? locs[0] : '';\n    const descLower = (d.description_text || '').toLowerCase().substring(0, 500);\n    const isRemote = d.remote_derived === true\n      || d.location_type === 'TELECOMMUTE'\n      || locStr.toLowerCase().includes('remote')\n      || descLower.includes('remote');\n\n    let salMin = null, salMax = null, salText = '';\n    if (d.salary_raw && d.salary_raw.value) {\n      const vals = d.salary_raw.value;\n      if (vals.length === 1) {\n        salMin = vals[0].value || null;\n        salText = vals[0].currency ? `${vals[0].currency} ${vals[0].value}` : String(vals[0].value || '');\n      } else if (vals.length >= 2) {\n        salMin = Math.min(...vals.map(v => v.value || 0).filter(v => v > 0)) || null;\n        salMax = Math.max(...vals.map(v => v.value || 0)) || null;\n      }\n    }\n\n    allJobs.push({\n      job_id:      'linkedin_' + d.id,\n      title:       d.title || '',\n      company:     d.organization || '',\n      location:    isRemote ? 'Remote' : locStr,\n      is_remote:   isRemote,\n      apply_url:   d.external_apply_url || d.url || '',\n      description: (d.description_text || '').substring(0, 3000),\n      salary_min:  salMin,\n      salary_max:  salMax,\n      salary_text: salText,\n      posted_date: d.date_posted ? d.date_posted.split('T')[0] : '',\n      source: 'LinkedIn'\n    });\n  }\n\n  // \u2500\u2500 Remote OK (top-level array, element 0 is legal notice) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  else if (Array.isArray(d)) {\n    for (const j of d.slice(1)) {\n      if (!j || !j.position) continue;\n      allJobs.push({\n        job_id:      'remoteok_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.position || '',\n        company:     j.company || '',\n        location:    'Remote',\n        is_remote:   true,\n        apply_url:   j.apply_url || j.url || '',\n        description: (j.description || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n        salary_min:  j.salary_min ? parseInt(j.salary_min) : null,\n        salary_max:  j.salary_max ? parseInt(j.salary_max) : null,\n        salary_text: '',\n        posted_date: j.date ? j.date.split('T')[0] : '',\n        source: 'RemoteOK'\n      });\n    }\n  }\n}\n\n// Remote-only filter\nallJobs = allJobs.filter(j =>\n  j.is_remote || j.location.toLowerCase().includes('remote')\n);\n\n// \u2500\u2500 Hard exclusions (title-based) \u2014 drop obvious software/web dev roles \u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst DEV_TITLES = [\n  'software engineer','software developer','software development',\n  'web developer','web engineer','frontend','front-end','back-end','backend',\n  'full stack','fullstack','full-stack',\n  'mobile developer','ios developer','android developer',\n  'data engineer','data scientist','ml engineer','machine learning',\n  'application developer','application engineer',\n  'java developer','python developer','ruby developer','rails developer',\n  'react engineer','angular engineer','ui engineer','ux engineer',\n  'staff engineer','principal software',\n];\nallJobs = allJobs.filter(j => {\n  const title = j.title.toLowerCase();\n  return !DEV_TITLES.some(kw => title.includes(kw));\n});\n\n// \u2500\u2500 Title must signal infra/ops/network/reliability \u2014 not generic \"engineer\" \u2500\nconst TITLE_OK = [\n  'sre','site reliability','reliability engineer',\n  'network engineer','network architect','network administrator','network operations',\n  'infrastructure engineer','infrastructure architect',\n  'platform engineer','hybrid cloud engineer','hybrid cloud','cloud engineer','cloud network',\n  'devops','dev ops','systems engineer','systems administrator','sysadmin',\n  'noc engineer','network security engineer','security engineer',\n  'it engineer','it infrastructure','senior engineer',\n  'security operations','operations engineer','cloud operations',\n  'monitoring engineer','observability engineer','monitoring administrator',\n  'site engineer','production engineer','infrastructure operations',\n  'network operations center','network analyst','network specialist',\n];\nallJobs = allJobs.filter(j => {\n  const title = j.title.toLowerCase();\n  return TITLE_OK.some(kw => title.includes(kw));\n});\n\n// \u2500\u2500 Exclusion keywords (security/legal) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst EXCL = [\n  'clearance required','requires clearance','must have clearance','active secret',\n  'top secret','ts/sci','secret clearance','drug test','drug screen',\n  'pre-employment drug','drug free workplace required'\n];\nallJobs = allJobs.filter(j => {\n  const txt = (j.title + ' ' + j.description + ' ' + j.company).toLowerCase();\n  return !EXCL.some(kw => txt.includes(kw));\n});\n\n// \u2500\u2500 Skip jobs where writing app code is the PRIMARY responsibility \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst CODE_PRIMARY = [\n  'building scalable web application','develop backend service',\n  'full-stack development','experience with react is required',\n  'ruby on rails','django framework','.net development','java spring boot',\n  'mobile application development','design and develop software product',\n  'software development lifecycle is your','you will write and maintain code',\n];\nallJobs = allJobs.filter(j => {\n  const descTop = j.description.toLowerCase().substring(0, 1000);\n  return !CODE_PRIMARY.some(kw => descTop.includes(kw));\n});\n\n// \u2500\u2500 Defense contractor exclusions \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst DEFENSE = [\n  'lockheed martin','raytheon','northrop grumman','booz allen',\n  'general dynamics','l3harris','bae systems','leidos'\n];\nallJobs = allJobs.filter(j =>\n  !DEFENSE.some(c => j.company.toLowerCase().includes(c))\n);\n\n// Dedup via workflow static data (persists 30 days)\nconst sd = $getWorkflowStaticData('global');\n\nif (!sd.seenJobIds) sd.seenJobIds = {};\nconst cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;\nfor (const id of Object.keys(sd.seenJobIds)) {\n  if (sd.seenJobIds[id] < cutoff) delete sd.seenJobIds[id];\n}\nconst newJobs = allJobs.filter(j => !sd.seenJobIds[j.job_id]);\nfor (const j of newJobs) sd.seenJobIds[j.job_id] = Date.now();\n\nconst limited = newJobs.slice(0, 15);\nreturn [{ json: { jobs: limited, count: limited.length } }];\n"
+      },
+      "id": "n9",
+      "name": "Normalize + Filter + Dedup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst { jobs, count } = $input.first().json;\n\nif (!count || count === 0) {\n  return [{ json: { jobs: [], count: 0, prompt: null } }];\n}\n\nconst jobsList = jobs.map((j, i) => {\n  const sal = j.salary_min\n    ? '$' + j.salary_min.toLocaleString() + '-$' + (j.salary_max ? j.salary_max.toLocaleString() : '?')\n    : (j.salary_text || 'Not listed');\n  return `${i+1}. Title: \"${j.title}\" | Company: \"${j.company}\" | Salary: ${sal} | Source: ${j.source}\\nDescription: ${j.description.substring(0, 500)}`;\n}).join('\\n\\n');\n\nconst prompt = `You are a job match scorer for a specific candidate. Analyze each job and return structured JSON.\n\nCANDIDATE PROFILE \u2014 Gadget\n- Location: Remote-only (WA state), 10% max travel \u2014 hard requirement\n- Experience: ~20 years in networking, security, and infrastructure \u2014 NOT a software developer\n- Current Role: Data Centers Network Engineer, Expeditors International (2025\u2013present)\n  \u2022 Enterprise network design/implementation across 350 locations, 19,000+ employees\n  \u2022 Cisco WLC and Juniper MIST wireless; Cisco Nexus and HP/Aruba switching\n  \u2022 Managing Express Routes to cloud providers (not provisioning)\n  \u2022 Leading Fortinet SD-WAN deployment across entire Expeditors network (in progress)\n\n- STRONG / EXPERT skills:\n  \u2022 Routing: BGP, OSPF, MPLS, DMVPN, VRRP, STP\n  \u2022 Switching: VLANs, QoS, ACLs, Cisco Nexus, HP/Aruba\n  \u2022 Wireless: Cisco Meraki (enterprise deployment + 6-month ownership + 3yr homelab), Cisco WLC, Juniper MIST\n  \u2022 VPN: Site-to-site, remote access, WireGuard, DMVPN\n  \u2022 WAN/SD-WAN: MPLS circuits, Express Routes (management), Fortinet SD-WAN (active deployment)\n  \u2022 Firewalls: Cisco ASA, Palo Alto, Juniper, Checkpoint \u2014 config, rule lifecycle, hardening\n  \u2022 Voice/UC: Avaya VoIP \u2014 6 years at State of NM (call routing, dial plans, SIP trunking); Cisco UCM\n  \u2022 IPS: Tipping Point IPS\n  \u2022 Compliance: PCI-DSS \u2014 network segmentation, cardholder environment controls\n  \u2022 Auth: Juniper RADIUS, Linux iptables\n  \u2022 Monitoring: Prometheus, Grafana, Loki, SolarWinds Orion, Splunk (analyst/end-user, not admin)\n  \u2022 Systems: Linux (RHEL/CentOS), Windows Server; VMware, Proxmox; Docker, Kubernetes\n  \u2022 Automation/Proxy: Traefik v3, CrowdSec, n8n; Ansible (in training), Python (in training)\n  \u2022 Vendors: Cisco, Juniper, Palo Alto, Checkpoint, Cisco ASA, Fortinet\n\n- LIMITED / DEVELOPING:\n  \u2022 F5 LTM/GTM: conceptual only \u2014 understands concepts, has NOT personally administered\n  \u2022 Cloud provisioning: Azure Express Routes managed (not built); AWS/GCP awareness only\n  \u2022 Splunk: end-user/analyst only, not platform admin\n  \u2022 Ansible + Python: actively learning \u2014 NOT a programmer, do NOT score as developer\n\n- Certifications: CCNA (97%), BICSI, B.A.S. Information Security, B.A.S. Electronics/Communications Engineering\n- Salary: $140k minimum (hard floor \u2014 no exceptions)\n- Hard dealbreakers: Not remote, requires clearance, requires drug testing, travel >10%\n\nTARGET ROLES (good fit):\nSRE (infrastructure/reliability focused), Senior Network Engineer, Cloud Network Engineer,\nInfrastructure Engineer, Platform Engineer, Network-focused DevOps, Network Security Engineer,\nSystems Administrator (senior), Network Architect\n\nNOT A FIT FOR:\nSoftware engineering, web development, application development, data engineering, ML/AI engineering,\nany role where writing production code is the PRIMARY responsibility\n\nJOBS TO EVALUATE:\n${jobsList}\n\nSCORING RULES \u2014 apply these strictly before assigning a score:\n\nAUTOMATIC DISQUALIFIERS (score 20 or below):\n- Role is primarily software/application/web development\n- Requires 3+ years of programming as primary skill (Python/Go/Java as main job function, not scripting)\n- Frontend/React/Angular/mobile required\n- Job title or description is clearly for a software engineer, not infra/ops\n- Requires clearance or drug testing\n- Not remote / requires relocation\n\nPENALTIES:\n- Minus 25: heavy coding requirements (Go/Rust/Java required, or \"you will build software\")\n- Minus 20: requires AWS Solutions Architect or developer certifications (not network certs)\n- Minus 15: requires CS degree or software engineering background specifically\n- Minus 10: scripting/automation required (Python OK as secondary, but note as gap)\n- Minus 15: salary clearly below $140k\n\nBONUSES:\n- Plus 10: network-centric SRE (focuses on network reliability, BGP/routing observability, firewall automation)\n- Plus 8: mentions Cisco/Juniper/Palo Alto/Fortinet or specific network protocol experience\n- Plus 8: Avaya/VoIP/UC experience valued\n- Plus 5: infrastructure/platform role that is clearly ops-heavy rather than dev-heavy\n- Plus 5: Grafana/Prometheus/observability stack prominent in requirements\n- Plus 5: PCI-DSS or compliance-focused network security\n\nReturn ONLY a valid JSON array \u2014 no markdown fences, no extra text:\n[{\n  \"index\": 1,\n  \"score\": 85,\n  \"fit_summary\": \"Exactly two sentences explaining the match quality and key alignment.\",\n  \"missing_skills\": \"comma-separated list of required skills not in profile, or None\",\n  \"red_flags\": \"salary below $140k, travel requirement, clearance, heavy coding required, etc \u2014 or None\",\n  \"tags\": [\"SRE\", \"Kubernetes\", \"AWS\", \"Grafana\"],\n  \"role_type\": \"SRE\",\n  \"resume_tips\": [\n    \"Emphasize your BGP/MPLS experience in the summary\",\n    \"Lead with Docker/Kubernetes hands-on work\",\n    \"Add Ansible learning progress to skills section\"\n  ],\n  \"cover_letter_hook\": \"Two to three sentences for an opening paragraph tailored specifically to this company and role.\"\n}]\n\nScoring guide: 90-100=perfect fit, 75-89=strong match, 60-74=good candidate, 45-59=possible stretch, <45=poor fit (do NOT send to Notion).\nrole_type must be one of: SRE, Network Engineer, DevOps, Platform Engineer, Cloud Engineer, Infrastructure Engineer, Other\ntags: up to 8 key technology/skill tags extracted directly from the job description\nresume_tips: 3-5 specific actionable bullets referencing Gadget's actual network/infra experience \u2014 include relevant confirmed skills not yet on resume (Meraki, Avaya VoIP, OSPF/MPLS, PCI-DSS, Palo Alto, Fortinet) where they fit\ncover_letter_hook: reference the company or role specifically, not generic`;\n\nreturn [{ json: { jobs, prompt } }];\n"
+      },
+      "id": "n10",
+      "name": "Format Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "AIzaSyDv5W0gQ1D2stiw4judItwdSGWYypE2_gU"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ contents: [ { parts: [ { text: ($json.prompt || 'Score 0 jobs: []') } ] } ], generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } }) }}",
+        "options": {}
+      },
+      "id": "n11",
+      "name": "Claude AI Score",
+      "position": [
+        1856,
+        464
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp = $input.first().json;\nconst { jobs } = $('Format Claude Prompt').first().json;\n\nif (!jobs || jobs.length === 0) {\n  return [{ json: { noJobs: true, message: 'No new jobs this run.' } }];\n}\n\nlet scores = [];\ntry {\n  const raw = resp.candidates[0].content.parts[0].text;\n  // Extract JSON array \u2014 find first '[' to matching last ']'\n  let cleaned = raw.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n  const arrStart = cleaned.indexOf('[');\n  const arrEnd   = cleaned.lastIndexOf(']');\n  if (arrStart !== -1 && arrEnd !== -1 && arrEnd > arrStart) {\n    cleaned = cleaned.substring(arrStart, arrEnd + 1);\n  }\n  scores = JSON.parse(cleaned);\n} catch(e) {\n  scores = jobs.map((j, i) => ({\n    index: i + 1, score: 50,\n    fit_summary: 'Auto-scored (parse error).',\n    missing_skills: 'Unknown', red_flags: 'None',\n    tags: [], role_type: 'Other',\n    resume_tips: ['Review job description manually.'],\n    cover_letter_hook: 'Please review this position and customize your cover letter accordingly.'\n  }));\n}\n\nreturn jobs.map((job, i) => {\n  const s = scores.find(x => x.index === i + 1) || {\n    score: 50, fit_summary: 'Not scored.',\n    missing_skills: 'Unknown', red_flags: 'None',\n    tags: [], role_type: 'Other',\n    resume_tips: [], cover_letter_hook: ''\n  };\n  return { json: {\n    ...job,\n    score:             s.score,\n    fit_summary:       s.fit_summary,\n    missing_skills:    s.missing_skills,\n    red_flags:         s.red_flags,\n    tags:              Array.isArray(s.tags) ? s.tags : [],\n    role_type:         s.role_type || 'Other',\n    resume_tips:       Array.isArray(s.resume_tips) ? s.resume_tips : [s.resume_tips || ''],\n    cover_letter_hook: s.cover_letter_hook || ''\n  }};\n});\n"
+      },
+      "id": "n12",
+      "name": "Parse Scores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2064,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst results = [];\nconst today = new Date().toISOString().split('T')[0];\n\nfunction descBlocks(text) {\n  const blocks = [];\n  const safe = (text || '').substring(0, 9500);\n  if (!safe) {\n    return [{object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:'(no description available)'}}]}}];\n  }\n  for (let i = 0; i < safe.length; i += 1900) {\n    blocks.push({\n      object:'block', type:'paragraph',\n      paragraph:{rich_text:[{type:'text',text:{content:safe.substring(i, i+1900)}}]}\n    });\n  }\n  return blocks;\n}\n\nfunction h2(text) {\n  return {object:'block',type:'heading_2',heading_2:{rich_text:[{type:'text',text:{content:text}}]}};\n}\nfunction divider() { return {object:'block',type:'divider',divider:{}}; }\nfunction bullet(text) {\n  return {object:'block',type:'bulleted_list_item',\n    bulleted_list_item:{rich_text:[{type:'text',text:{content:text.substring(0,2000)}}]}};\n}\nfunction para(text) {\n  return {object:'block',type:'paragraph',\n    paragraph:{rich_text:[{type:'text',text:{content:(text||'').substring(0,2000)}}]}};\n}\n\nfor (const item of $input.all()) {\n  const j = item.json;\n\n  if (j.noJobs || !j.title) continue;\n  if (j.score < 45) continue;\n\n  const tips = Array.isArray(j.resume_tips)\n    ? j.resume_tips.filter(t => t && t !== 'None')\n    : [];\n\n  const children = [\n    h2('\ud83d\udccb Full Job Description'),\n    ...descBlocks(j.description),\n    divider(),\n    h2('\ud83c\udfaf Resume Customization Tips'),\n    ...(tips.length > 0\n      ? tips.slice(0,8).map(t => bullet(t))\n      : [para('No specific tips generated.')]),\n    divider(),\n    h2('\u2709\ufe0f Cover Letter Hook'),\n    para(j.cover_letter_hook || 'Not generated.'),\n  ];\n\n  const priority = j.score >= 80 ? 'High' : j.score >= 60 ? 'Medium' : 'Low';\n  const tagsValue = (j.tags || []).slice(0, 10).map(t => ({name: String(t).substring(0,100)}));\n  const tipsShort = tips.slice(0,3).join(' | ').substring(0,500) || 'None';\n  const clShort   = (j.cover_letter_hook || 'None').substring(0,500);\n\n  const body = {\n    parent: { database_id: \"YOUR_NOTION_DATABASE_ID\" },\n    properties: {\n      \"Job Title\":          { title:        [{ text: { content: (j.title   || '').substring(0,200) } }] },\n      \"Company\":            { rich_text:    [{ text: { content: (j.company || '').substring(0,200) } }] },\n      \"Source\":             { select:       { name: j.source || 'JSearch' } },\n      \"Apply URL\":          { url: j.apply_url || null },\n      \"Location\":           { rich_text:    [{ text: { content: (j.location || '').substring(0,200) } }] },\n      \"Salary Min\":         { number: j.salary_min || null },\n      \"Salary Max\":         { number: j.salary_max || null },\n      \"Score\":              { number: j.score || 0 },\n      \"Fit Summary\":        { rich_text:    [{ text: { content: (j.fit_summary    || '').substring(0,2000) } }] },\n      \"Missing Skills\":     { rich_text:    [{ text: { content: (j.missing_skills || 'None').substring(0,500) } }] },\n      \"Red Flags\":          { rich_text:    [{ text: { content: (j.red_flags      || 'None').substring(0,500) } }] },\n      \"Tags\":               { multi_select: tagsValue },\n      \"Role Type\":          { select:       { name: j.role_type || 'Other' } },\n      \"Priority\":           { select:       { name: priority } },\n      \"Resume Tips\":        { rich_text:    [{ text: { content: tipsShort } }] },\n      \"Cover Letter Draft\": { rich_text:    [{ text: { content: clShort   } }] },\n      \"Status\":             { select:       { name: 'New' } },\n      \"Date Found\":         { date:         { start: today } },\n      \"Posted Date\":        { rich_text:    [{ text: { content: j.posted_date || '' } }] },\n      \"Job ID\":             { rich_text:    [{ text: { content: (j.job_id || '').substring(0,200) } }] }\n    },\n    children: children\n  };\n\n  results.push({ json: { ...j, notionBody: JSON.stringify(body) } });\n}\n\nreturn results;\n"
+      },
+      "id": "n13a",
+      "name": "Prepare Notion Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ntn_c11964516799KN4p17wJ9fPsGGiaebwenZKkYQ5CsEp9m1"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notionBody }}",
+        "options": {}
+      },
+      "id": "n13",
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2656,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\nif (!items.length || items[0].json.noJobs) {\n  return [{ json: {\n    discord_content: '**Job Scout** \u2014 No new matching jobs found today.',\n    email_html: '<p>No new matching jobs found today.</p>',\n    email_subject: 'Job Scout: No new jobs today',\n    has_jobs: false\n  } }];\n}\n\nconst sorted = [...items].sort((a,b) => b.json.score - a.json.score);\nconst top5  = sorted.slice(0, 5);\nconst top20 = sorted.slice(0, 20);\nconst today = new Date().toLocaleDateString('en-US',\n  {weekday:'long',year:'numeric',month:'long',day:'numeric'});\n\nfunction cleanUrl(url) {\n  try { return url.split('?')[0]; } catch(e) { return url; }\n}\n\n// Source badge colors for Discord\nconst srcEmoji = {\n  JSearch:'\ud83d\udd37', Adzuna:'\ud83d\udfe2', Remotive:'\ud83d\udfe3', Indeed:'\ud83d\udd36',\n  RemoteOK:'\u26ab', TheMuse:'\ud83c\udf38', LinkedIn:'\ud83d\udd35'\n};\n\n// \u2500\u2500 Discord \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nlet discord = `**\ud83d\udd0d Job Scout \u2014 ${today}** | ${items.length} new jobs\n\n`;\nfor (const item of top5) {\n  const j = item.json;\n  const sal = j.salary_min\n    ? \" `$\" + Math.round(j.salary_min/1000) + \"k-\" + Math.round((j.salary_max||j.salary_min)/1000) + \"k`\"\n    : (j.salary_text ? \" `\" + j.salary_text + \"`\" : \"\");\n  const badge = srcEmoji[j.source] || '\u26aa';\n  const summary = j.fit_summary.length > 100 ? j.fit_summary.substring(0,97) + '...' : j.fit_summary;\n  const tags = j.tags && j.tags.length ? ' \u00b7 ' + j.tags.slice(0,3).join(', ') : '';\n  const line = `**${j.score}** \u2014 **${j.title}** @ ${j.company}${sal} ${badge}${tags}\n${summary}\n${cleanUrl(j.apply_url)}\n\n`;\n  if ((discord + line).length < 1800) discord += line;\n}\ndiscord += `\ud83d\udccb Email has full report | [Notion](<https://www.notion.so/YOUR_NOTION_DATABASE_ID>)\\n\ud83d\udc49 **Open Notion \u2192 change Status to Applied when you apply!**`;\n\n// \u2500\u2500 Email \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nlet emailRows = '';\nfor (const item of top20) {\n  const j = item.json;\n  const sal = j.salary_min\n    ? '$' + j.salary_min.toLocaleString() + (j.salary_max ? '-$' + j.salary_max.toLocaleString() : '+')\n    : (j.salary_text || 'Not listed');\n  const c = j.score >= 80 ? '#2d8a4e' : j.score >= 60 ? '#d4940a' : '#c0392b';\n  const tagHtml = j.tags && j.tags.length\n    ? '<span style=\"margin-top:4px;display:block\">'\n      + j.tags.slice(0,6).map(t => `<span style=\"background:#e8f4f8;color:#2980b9;padding:2px 6px;border-radius:10px;font-size:11px;margin-right:3px\">${t}</span>`).join('')\n      + '</span>'\n    : '';\n  emailRows += '<tr style=\"border-bottom:1px solid #eee\">'\n    + `<td style=\"padding:12px;width:60px;text-align:center\"><span style=\"background:${c};color:white;padding:4px 8px;border-radius:12px;font-weight:bold\">${j.score}</span>`\n    + `<br><span style=\"font-size:11px;color:#999\">${j.source}</span></td>`\n    + `<td style=\"padding:12px\"><strong><a href=\"${j.apply_url}\" style=\"color:#2c3e50;text-decoration:none\">${j.title}</a></strong><br>`\n    + `<span style=\"color:#666\">${j.company}</span> &nbsp;|&nbsp; `\n    + `<span style=\"color:#888;font-size:13px\">${j.location}</span> &nbsp;|&nbsp; `\n    + `<span style=\"color:#27ae60;font-size:13px\">${sal}</span><br>`\n    + `<span style=\"color:#555;font-size:13px;display:block;margin-top:4px\">${j.fit_summary}</span>`\n    + tagHtml\n    + `<span style=\"color:#e67e22;font-size:12px;display:block;margin-top:3px\">`\n    + (j.resume_tips && j.resume_tips.length ? '\ud83d\udcdd ' + (j.resume_tips[0]||'') : '') + '</span>'\n    + (j.missing_skills && j.missing_skills !== 'None' ? `<span style=\"color:#e67e22;font-size:12px\">\u26a0 Missing: ${j.missing_skills}</span>` : '')\n    + (j.red_flags && j.red_flags !== 'None' ? `<span style=\"color:#e74c3c;font-size:12px;display:block\">\ud83d\udea9 ${j.red_flags}</span>` : '')\n    + `<span style=\"color:#aaa;font-size:12px\"> Posted: ${j.posted_date||'Unknown'}</span>`\n    + '</td></tr>';\n}\n\nconst emailHtml = `<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;max-width:850px;margin:0 auto;color:#333\">\n<h2 style=\"color:#2c3e50;border-bottom:3px solid #3498db;padding-bottom:10px\">\ud83d\udd0d Job Scout \u2014 ${today}</h2>\n<p>Found <strong>${items.length} new job(s)</strong> matching your profile. Showing top ${Math.min(20,items.length)}. <a href=\"https://www.notion.so/YOUR_NOTION_DATABASE_ID\">View all in Notion \u2192</a></p>\n<table style=\"width:100%;border-collapse:collapse\">\n<thead><tr style=\"background:#3498db;color:white\"><th style=\"padding:10px\">Score</th><th style=\"padding:10px;text-align:left\">Job Details</th></tr></thead>\n<tbody>${emailRows}</tbody></table>\n<p style=\"margin-top:20px;color:#888;font-size:13px\">\n  <strong>Tip:</strong> Jobs scoring 80+ are high priority \u2014 open their Notion page for tailored resume tips and cover letter draft.\n</p>\n</body></html>`;\n\nreturn [{ json: {\n  discord_content: discord,\n  email_html:      emailHtml,\n  email_subject:   `Job Scout: ${items.length} new job(s) \u2014 ${today}`,\n  has_jobs: true\n} }];\n"
+      },
+      "id": "n14",
+      "name": "Build Reports",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.discord_content }}"
+            },
+            {
+              "name": "username",
+              "value": "Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n15",
+      "name": "Discord Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2512,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "your.email@example.com",
+        "toEmail": "your.email@example.com",
+        "subject": "={{ $json.email_subject }}",
+        "html": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "n17",
+      "name": "Send Gmail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2736,
+        704
+      ],
+      "webhookId": "be72372e-2580-4f96-a186-dbd9d1548241",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "id": "notion_rate_limit_wait_01",
+      "name": "Notion Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        224
+      ],
+      "webhookId": "db0de739-da45-4267-a489-771969d335e3"
+    },
+    {
+      "parameters": {
+        "url": "https://linkedin-job-search-api.p.rapidapi.com/active-jb-24h",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "title_filter",
+              "value": "\"network engineer\" OR \"site reliability engineer\" OR \"infrastructure engineer\" OR \"network security engineer\" OR \"platform engineer\" OR \"devops engineer\" OR \"systems engineer\" OR \"cloud engineer\" OR \"sre\" OR \"hybrid cloud engineer\""
+            },
+            {
+              "name": "location_filter",
+              "value": "\"United States\""
+            },
+            {
+              "name": "description_type",
+              "value": "text"
+            },
+            {
+              "name": "limit",
+              "value": "25"
+            },
+            {
+              "name": "offset",
+              "value": "0"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-rapidapi-key",
+              "value": "9a7482cb79mshcadf726bd07beedp1ca6a3jsn3e5d21f99b16"
+            },
+            {
+              "name": "x-rapidapi-host",
+              "value": "linkedin-job-search-api.p.rapidapi.com"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "linkedin_src_01",
+      "name": "LinkedIn Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.adzuna.com/v1/api/jobs/us/search/1",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "8f5c8794"
+            },
+            {
+              "name": "app_key",
+              "value": "f7a179823220dc32c6e0ea3c7410d32c"
+            },
+            {
+              "name": "category",
+              "value": "it-jobs"
+            },
+            {
+              "name": "title_only",
+              "value": "1"
+            },
+            {
+              "name": "what_or",
+              "value": "devops sre infrastructure platform reliability network hybrid"
+            },
+            {
+              "name": "results_per_page",
+              "value": "20"
+            },
+            {
+              "name": "sort_by",
+              "value": "date"
+            },
+            {
+              "name": "max_days_old",
+              "value": "14"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "adzuna_src_01",
+      "name": "Adzuna Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://remotive.com/api/remote-jobs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "category",
+              "value": "devops-sysadmin"
+            },
+            {
+              "name": "limit",
+              "value": "20"
+            },
+            {
+              "name": "search",
+              "value": "network OR sre OR reliability OR infrastructure OR sysadmin OR noc"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "remotive_src_01",
+      "name": "Remotive Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        608
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mab",
+      "name": "Merge AB",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        -64
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mcd",
+      "name": "Merge CD",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        288
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mef",
+      "name": "Merge EF",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        624
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mgh",
+      "name": "Merge GH",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        960
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mabcd",
+      "name": "Merge ABCD",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        944,
+        112
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mefgh",
+      "name": "Merge EFGH",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        944,
+        800
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mall",
+      "name": "Merge All",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1248,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://jsearch.p.rapidapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "site reliability engineer OR network reliability engineer infrastructure remote"
+            },
+            {
+              "name": "num_pages",
+              "value": "2"
+            },
+            {
+              "name": "date_posted",
+              "value": "week"
+            },
+            {
+              "name": "remote_jobs_only",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Key",
+              "value": "1b9b3d679dmsh14a39a284d224dcp172c0fjsn5cfd92312afb"
+            },
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "jsearch.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "n4",
+      "name": "JSearch - SRE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://jsearch.p.rapidapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "senior network engineer OR network security engineer OR cloud network engineer OR infrastructure security engineer OR hybrid cloud engineer remote"
+            },
+            {
+              "name": "num_pages",
+              "value": "2"
+            },
+            {
+              "name": "date_posted",
+              "value": "week"
+            },
+            {
+              "name": "remote_jobs_only",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Key",
+              "value": "1b9b3d679dmsh14a39a284d224dcp172c0fjsn5cfd92312afb"
+            },
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "jsearch.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "n5",
+      "name": "JSearch - Network Eng",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://indeed-api.p.rapidapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "site reliability engineer OR senior network engineer OR network infrastructure engineer OR cloud network engineer OR hybrid cloud engineer"
+            },
+            {
+              "name": "location",
+              "value": "remote"
+            },
+            {
+              "name": "page",
+              "value": "1"
+            },
+            {
+              "name": "country",
+              "value": "us"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Key",
+              "value": "1b9b3d679dmsh14a39a284d224dcp172c0fjsn5cfd92312afb"
+            },
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "indeed-api.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "n_indeed",
+      "name": "Indeed Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://remoteok.com/api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (job-search-bot/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "n_remoteok",
+      "name": "Remote OK Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.themuse.com/api/public/jobs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "category",
+              "value": "IT"
+            },
+            {
+              "name": "page",
+              "value": "0"
+            },
+            {
+              "name": "descending",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "n_muse",
+      "name": "The Muse Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        1248
+      ]
+    }
+  ],
+  "connections": {
+    "Normalize + Filter + Dedup": {
+      "main": [
+        [
+          {
+            "node": "Format Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude AI Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI Score": {
+      "main": [
+        [
+          {
+            "node": "Parse Scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Scores": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notion Body",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Reports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notion Body": {
+      "main": [
+        [
+          {
+            "node": "Notion Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reports": {
+      "main": [
+        [
+          {
+            "node": "Discord Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 7AM": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Adzuna Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remotive Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - SRE",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - Network Eng",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Indeed Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remote OK Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "The Muse Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On Demand": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Adzuna Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remotive Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - SRE",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - Network Eng",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Indeed Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remote OK Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "The Muse Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Search": {
+      "main": [
+        [
+          {
+            "node": "Merge GH",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Adzuna Search": {
+      "main": [
+        [
+          {
+            "node": "Merge CD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remotive Search": {
+      "main": [
+        [
+          {
+            "node": "Merge CD",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "JSearch - SRE": {
+      "main": [
+        [
+          {
+            "node": "Merge AB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSearch - Network Eng": {
+      "main": [
+        [
+          {
+            "node": "Merge AB",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Indeed Search": {
+      "main": [
+        [
+          {
+            "node": "Merge EF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remote OK Search": {
+      "main": [
+        [
+          {
+            "node": "Merge EF",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "The Muse Search": {
+      "main": [
+        [
+          {
+            "node": "Merge GH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge AB": {
+      "main": [
+        [
+          {
+            "node": "Merge ABCD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge CD": {
+      "main": [
+        [
+          {
+            "node": "Merge ABCD",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge EF": {
+      "main": [
+        [
+          {
+            "node": "Merge EFGH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge GH": {
+      "main": [
+        [
+          {
+            "node": "Merge EFGH",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge ABCD": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge EFGH": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge All": {
+      "main": [
+        [
+          {
+            "node": "Normalize + Filter + Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Daily 7AM": {
+      "recurrenceRules": []
+    },
+    "global": {
+      "seenJobIds": {
+        "jsearch_2oVqKcDQ41d7nq3QAAAAAA==": 1780693219198,
+        "jsearch_QLTRKsAODzp89tEqAAAAAA==": 1780693219198,
+        "jsearch_CR-kYJ2tYwoocN6VAAAAAA==": 1780693219198,
+        "jsearch_hnyMXmQmUIYVjyEHAAAAAA==": 1780693219198,
+        "jsearch_1nMIj6pLUNN1oCc1AAAAAA==": 1780693219198,
+        "jsearch_p8K3Ebu5EW8MPpu9AAAAAA==": 1780693219198,
+        "jsearch_-k2pdtQUb0qTi6FKAAAAAA==": 1780693219198,
+        "jsearch_RQvljIwUJtgCWptOAAAAAA==": 1780693219198,
+        "jsearch_GVtoORMP9MtTaY-0AAAAAA==": 1780693219198,
+        "jsearch_HszHIMSLjUsQVsdyAAAAAA==": 1780693219198,
+        "jsearch_VekBq_Oxxw2Lk5z_AAAAAA==": 1780693219198,
+        "jsearch_VEG86au-PKjaYCiBAAAAAA==": 1780693219198,
+        "jsearch_DNvA7Ugu4lrosSLyAAAAAA==": 1780693219198,
+        "jsearch_iCOwSqpY6062x_i_AAAAAA==": 1780693219198,
+        "jsearch_cPvHWcNAvnUo4CD8AAAAAA==": 1780693219198,
+        "jsearch_vGccYGYDZhnFtTFXAAAAAA==": 1780693219198,
+        "jsearch_N9DAkI1K9f9J6N8rAAAAAA==": 1780779633064,
+        "jsearch_BL5jxEno51ZJeOyLAAAAAA==": 1780779633064,
+        "jsearch_yvmOCL7X5xIy3CbRAAAAAA==": 1780779633064,
+        "jsearch_59WWrSMIbexOzozvAAAAAA==": 1780779633064,
+        "jsearch_9ooaVoLitPUcfdH0AAAAAA==": 1780779633064,
+        "jsearch_23hq7_lCJJBXuZPyAAAAAA==": 1780779633064,
+        "jsearch_jb-5CvvcrJ3GgSTxAAAAAA==": 1780779633064,
+        "jsearch_r6DJ7lNa97rmtiJjAAAAAA==": 1780779633064,
+        "jsearch_vjXMOohiCawKBcL_AAAAAA==": 1780779633064,
+        "jsearch_pciTB5iRHPnNzbQBAAAAAA==": 1780779633064,
+        "jsearch_Nta6X3NTToHvIVsTAAAAAA==": 1780866038944,
+        "jsearch_4ZaSPyQuvHb8uOlTAAAAAA==": 1780866038944,
+        "jsearch_5wrjjRa-XTnrIQ_zAAAAAA==": 1780866038944,
+        "jsearch_nRKDxrDGv35zmZc8AAAAAA==": 1780866038944,
+        "jsearch_WGEsVhE3vjQQioSaAAAAAA==": 1780866038944,
+        "jsearch_Dz6WWlj3M4QqC_GlAAAAAA==": 1780866038944,
+        "jsearch_jt9Om3CfrPzjIAk-AAAAAA==": 1780866038944,
+        "jsearch_1uNEgAg7zjPY7KMAAAAAAA==": 1780866038944,
+        "jsearch_Ly4S2q3Ebl8MFyj_AAAAAA==": 1780866038944,
+        "jsearch_01OKR1pSGj5ZxqbBAAAAAA==": 1780866038944,
+        "jsearch_Om4gas3lU15_9Fm_AAAAAA==": 1780866038944,
+        "jsearch_6jpTzM7NJJIDUU7mAAAAAA==": 1780866038944,
+        "jsearch_LhSY71G-ToQvL2TDAAAAAA==": 1780866038944,
+        "jsearch_voR2YpnCifdBHxR_AAAAAA==": 1780866038944,
+        "jsearch_AKChsuqvDYb3EJ9QAAAAAA==": 1780866038944,
+        "jsearch_KU1yVBktUiaz75jVAAAAAA==": 1780866038944,
+        "jsearch_gIrjJFqISgWkWuGHAAAAAA==": 1780952418590,
+        "jsearch_oosNLtMIrAVq651oAAAAAA==": 1780952418590,
+        "jsearch_5Io5muIue_eQo4nNAAAAAA==": 1780952418590,
+        "jsearch_05-BxG-WDPNHT5cTAAAAAA==": 1780952418590,
+        "jsearch_9mSpOyYozyysDKgkAAAAAA==": 1780952418590,
+        "jsearch_8iPhGkGK5E0IofmLAAAAAA==": 1780952418590,
+        "jsearch_4556ntexbezzebypAAAAAA==": 1780952418590,
+        "jsearch_6J_jHHmpaUSO4eMEAAAAAA==": 1780952418590,
+        "jsearch_L-tFjEQR1xpOsND-AAAAAA==": 1780952418590,
+        "jsearch_8z2aMOOLjnhmZ8vzAAAAAA==": 1780952418590,
+        "jsearch_oCmi65fN-XT7xACcAAAAAA==": 1780952418590,
+        "jsearch_Ft5IC05v3ZBe9R1sAAAAAA==": 1780952418590,
+        "jsearch_4it67jLFZodSTDavAAAAAA==": 1780983951766,
+        "jsearch_Tn_QqrApIg3TI3sIAAAAAA==": 1780983951767,
+        "jsearch_j295PdamHiqltmHsAAAAAA==": 1780983951767,
+        "jsearch_tsSqDZt7n5ZGEtN6AAAAAA==": 1780983951767,
+        "jsearch_UGm33Pq-WtxS3gamAAAAAA==": 1780983951767,
+        "jsearch_u9cQqJLQWGPRmqu8AAAAAA==": 1780983951767,
+        "jsearch_5r3UhBhc2abeJie5AAAAAA==": 1780983951767,
+        "jsearch_8ETtC4hOoSq6XrWlAAAAAA==": 1780983951767,
+        "jsearch_MLssKXMgL840sbx1AAAAAA==": 1780983951767,
+        "jsearch_2wCiDD22xLmDPnQ-AAAAAA==": 1780983951767,
+        "jsearch_t9opnSWPPxpANYlEAAAAAA==": 1780983951767,
+        "adzuna_5756721144": 1780983951767,
+        "jsearch_7ebp8KiHWAAXEQi9AAAAAA==": 1781038864547,
+        "jsearch_ZbHJF7oPx36VlIoKAAAAAA==": 1781038864547,
+        "jsearch_28_9CRJhgWkNDf3uAAAAAA==": 1781038864547,
+        "jsearch_DW-1DD3hK3GDY-wTAAAAAA==": 1781038864547,
+        "jsearch_i4O42eOlz33HF2c0AAAAAA==": 1781038864547,
+        "jsearch_kEQ1TAE1K8vgzlr6AAAAAA==": 1781038864547,
+        "jsearch_ObOwMkkwLNpzLbDfAAAAAA==": 1781038864547,
+        "jsearch_9yeKx8jihTfU4i2VAAAAAA==": 1781038864547,
+        "jsearch_S_AkTMr_lUybGjWDAAAAAA==": 1781038864547,
+        "jsearch_ve-ovBvjXERTMDlsAAAAAA==": 1781038864547,
+        "jsearch_smDIoO1c4suQzIlcAAAAAA==": 1781038864547,
+        "jsearch_ChuZf-LaSee1EHusAAAAAA==": 1781038864547,
+        "jsearch_ULF9sWfR8Vw_55_hAAAAAA==": 1781038864547,
+        "jsearch_YcjLRD9LNJ2NcfvvAAAAAA==": 1781038864547,
+        "jsearch_KTA8oRXli5kTGOaYAAAAAA==": 1781038864547,
+        "jsearch_L_Jw6tYU46iog-HGAAAAAA==": 1781125226181,
+        "jsearch_ZQjJCkuj4XrRD3_MAAAAAA==": 1781125226181,
+        "jsearch_oBrxId-nulDBirh6AAAAAA==": 1781125226181,
+        "jsearch_ghsUsSCv2IzWddPUAAAAAA==": 1781125226181,
+        "jsearch_YMNMppwoSNrEzp6oAAAAAA==": 1781125226181,
+        "jsearch_USaEqZAtNpWgNIDQAAAAAA==": 1781125226181,
+        "jsearch_CLqjU84n3F7sTbuaAAAAAA==": 1781125226181,
+        "jsearch_meH_k0VqO0VSSfVFAAAAAA==": 1781125226181,
+        "jsearch_DNcydGkFjwj99rIcAAAAAA==": 1781125226181,
+        "jsearch_P5va57Zl2L0JAe7iAAAAAA==": 1781125226181,
+        "jsearch_IPkRnFxbJev3L3iEAAAAAA==": 1781125226181,
+        "jsearch_LWR3FgWBkMURpqyQAAAAAA==": 1781125226181,
+        "jsearch_sBh26LyIOeY9pIb4AAAAAA==": 1781211640089,
+        "jsearch_Q5GxVbeq4aVMxC9nAAAAAA==": 1781211640089,
+        "jsearch_hvKTqj53zh0c0wYvAAAAAA==": 1781211640089,
+        "jsearch_60fgsQxujE1aEaJdAAAAAA==": 1781211640089,
+        "jsearch_8VZemQ44lbB4HzZPAAAAAA==": 1781211640089,
+        "jsearch_m3ulRIvEkQR_Y6pyAAAAAA==": 1781211640089,
+        "jsearch_9Ox4IVonwP0gr9toAAAAAA==": 1781211640089,
+        "jsearch_cZ0TOL1Ua9LEKD8QAAAAAA==": 1781211640089,
+        "jsearch_N5vvEN9Q8g8Je9AFAAAAAA==": 1781211640089,
+        "jsearch_bXaVOXMBdc0aCJ8NAAAAAA==": 1781211640089,
+        "jsearch_6q9zKW0-POip23ECAAAAAA==": 1781211640089,
+        "jsearch_MxGljC3dVKo5m8pXAAAAAA==": 1781211640089,
+        "jsearch_WKAfolp-y3uBCXi7AAAAAA==": 1781211640089,
+        "jsearch_hkQnYwwkHoY9CxS0AAAAAA==": 1781211640089,
+        "jsearch_nAp6GTAU11MeVk6uAAAAAA==": 1781211640089
+      }
+    }
+  },
+  "meta": null,
+  "pinData": {},
+  "versionId": "07eebc34-b578-4202-ae98-d836bee27529",
+  "versionCounter": 183,
+  "triggerCount": 2,
+  "shared": [
+    {
+      "updatedAt": "2026-03-29T03:05:38.403Z",
+      "createdAt": "2026-03-29T03:05:38.403Z",
+      "role": "workflow:owner",
+      "workflowId": "QdbiVxedEjuqIIHu",
+      "projectId": "wKfdBpMS0JmOoV5j",
+      "project": {
+        "updatedAt": "2025-11-16T22:10:59.419Z",
+        "createdAt": "2025-11-16T22:06:13.609Z",
+        "id": "wKfdBpMS0JmOoV5j",
+        "name": "Gadget Man <your.email@example.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-11-16T22:06:13.610Z",
+            "createdAt": "2025-11-16T22:06:13.610Z",
+            "userId": "c7ebb70a-2b7c-4092-ab61-54402a19a5fe",
+            "projectId": "wKfdBpMS0JmOoV5j",
+            "user": {
+              "updatedAt": "2026-06-12T04:12:22.000Z",
+              "createdAt": "2025-11-16T22:06:12.457Z",
+              "id": "c7ebb70a-2b7c-4092-ab61-54402a19a5fe",
+              "email": "your.email@example.com",
+              "firstName": "Gadget",
+              "lastName": "Man",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-11-16T22:11:18.519Z",
+                "personalization_survey_n8n_version": "1.119.2",
+                "companyType": "personal",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "firstSuccessfulWorkflowId": "pNZcjNdl4m4fAflb",
+                "userActivatedAt": 1764586854414,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1774392316845
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-06-11",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": []
+}

@@ -1,0 +1,592 @@
+{
+  "updatedAt": "2026-04-25T20:10:27.000Z",
+  "createdAt": "2026-03-30T06:18:08.194Z",
+  "id": "KkBKtNTPN0LXFwKj",
+  "name": "Job Apply From URL",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "apply-url",
+        "options": {
+          "responseData": "{\"message\": \"Processing started. Check Discord for your docs in ~60 seconds.\"}"
+        }
+      },
+      "id": "b1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        304
+      ],
+      "webhookId": "5ed0f1c8-01df-41ee-8abe-0258f11e025d"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst q = $json.query || {};\nconst b = $json.body  || {};\nconst url = q.url || b.url || '';\nif (!url) {\n  // Return a Discord error rather than failing silently\n  return [{ json: { error: true, url: '', message: 'No url parameter provided. Use ?url=JOB_URL' } }];\n}\nreturn [{ json: { url, error: false } }];\n"
+      },
+      "id": "b2",
+      "name": "Extract URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://r.jina.ai/{{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "text/plain"
+            },
+            {
+              "name": "X-No-Cache",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "b3",
+      "name": "Fetch via Jina",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst url  = $('Extract URL').first().json.url;\nconst raw  = $json.data || $json.body || $json || '';\nconst text = typeof raw === 'string' ? raw : JSON.stringify(raw);\n\nconst resumeText = \"Gadget\\nWalla Walla, WA | 505.926.1010 | your.email@example.com | https://www.gadget.com\\n\\nSenior IT Professional \\u2014 Network Engineering | Systems Administration | Infrastructure | Security\\n\\nSenior IT professional with 15+ years managing large-scale IT operations including data center migrations and enterprise network design. Experienced across network engineering, systems administration, virtualization, security hardening, and cloud infrastructure. Strong track record of measurable impact: reduced firewall rulesets by 75%, completed a 100-server data center migration in 2 days, and updated 1,200+ routers in 1.5 weeks vs. a 6-month estimate.\\n\\nCore Competencies: Network Automation & Support | Process Reengineering | Network & Systems Management | Security Management | Server Systems Administration | Systems Availability & Reliability | Vulnerability Management | Patching & Maintenance | Documentation & Reporting | Mentoring & Coaching\\n\\nPROFESSIONAL EXPERIENCE\\n\\nPursuing continuous learning in Ansible and Kubernetes \\u2014 self-guided online training programs (2024\\u2013Present).\\n\\nEXPEDITORS INTERNATIONAL \\u2014 Airway Heights, WA (2025\\u2013Present)\\nNetwork Engineer\\nData Centers Network Engineer responsible for design and implementation of a large enterprise network. Design and integrate computer networks enabling data transfer and communication between different systems, online networks, and databases. Configure, support, and troubleshoot Expeditors' global and local networks.\\n\\nUMATILLA ELECTRIC COOPERATIVE \\u2014 Hermiston, OR (2020\\u20132024)\\nSystem Administrator\\nOptimized Windows/Linux servers; administered VMware and Proxmox environments; implemented Docker for scalable application deployment. Monitored and enhanced IT network infrastructure using SolarWinds Orion across routers, switches, firewalls, VPNs, and zero-trust networking. Conducted security assessments and optimized network operations including IP management and VLAN configuration. Coached junior staff.\\nKey Contributions:\\n\\u2022 Reduced firewall rules from 1,600 to 400 \\u2014 simplified management and measurably improved cybersecurity posture\\n\\u2022 Pioneered documentation of complex server room connections across 150 unique points\\n\\nTHE UNIVERSITY OF NEW MEXICO HEALTH SCIENCES CENTER \\u2014 Albuquerque, NM (2016\\u20132019)\\nNetwork Engineer\\nCo-lead engineer (1 of 2) for the largest employer in Albuquerque \\u2014 7,000+ employees, 30,000+ weekly customers across hospital and academic facilities. Oversaw security and operations for 1,000+ networked devices.\\nKey Contributions:\\n\\u2022 Led a 2-day migration of a 12-rack, 100-server data center with minimal downtime\\n\\u2022 Designed and implemented Ethernet, VLANs, QoS, and converged Voice & Data networks for telehealth and televideo\\n\\u2022 Optimized network using Cisco and Juniper with BGP and DNS configurations\\n\\u2022 Spearheaded cybersecurity initiative to harden IT equipment to comply with HIPAA and health security standards\\n\\u2022 Directed technical guidance for a team of technicians and analysts\\n\\nSAIC \\u2014 Albuquerque, NM (2014\\u20132015)\\nComputer Infrastructure Specialist\\nContracted to Sandia National Laboratories supporting Non-Proliferation nuclear defense initiatives.\\nKey Contributions:\\n\\u2022 Implemented rigorous hardening processes for IT devices supporting national security operations\\n\\u2022 Revolutionized documentation practices \\u2014 network configurations to large-format plotting standard\\n\\nCRICKET COMMUNICATIONS \\u2014 Albuquerque, NM (2012\\u20132013)\\nSecurity Engineer\\nLed nationwide project to remediate network vulnerabilities and develop new security policies.\\nKey Contributions:\\n\\u2022 Completed updates across 1,200+ Cisco routers in 1.5 weeks vs. originally scheduled 6 months\\n\\nNEW MEXICO DEPARTMENT OF INFORMATION TECHNOLOGY \\u2014 Santa Fe, NM\\nNetwork Specialist II\\n\\u2022 Scored 97% on CCNA examination\\n\\nEDUCATION\\nBachelor of Applied Science, Information Security Systems | ITT Technical Institute\\nBachelor of Applied Science, Electronics/Communications Engineering Technology | ITT Technical Institute\\nAssociate of Applied Science, Computer/Electronics Engineering Technology | ITT Technical Institute\\n\\nTECHNICAL SKILLS\\nOperating Systems: Linux (RedHat & CentOS), Windows Server\\nVirtualization & Containers: VMware, Proxmox, Docker, Kubernetes\\nNetworking: Routers/Switches/Firewalls, VPNs, Zero Trust (Cloudflare), VLANs, BGP, DNS, QoS, SolarWinds Orion, Cisco, Juniper, Palo Alto\\nSecurity: Network Security, IPS (TippingPoint), Firewalls (Check Point), RADIUS (Juniper), iptables\\nMonitoring & Observability: SolarWinds Orion, Grafana, Prometheus (learning)\\nAutomation & DevOps: Ansible (learning), Docker, Kubernetes, basic Python scripting\\nData Management & Backup: Tape Backup, Backup Exec, CIFS, NFS, NIS, Samba\";\n\n// Strip boilerplate: remove \"Similar jobs\" section and everything after\nlet content = text;\nconst simIdx = content.search(/#{2,3}\\s*Similar jobs/i);\nif (simIdx > 0) content = content.substring(0, simIdx);\n\n// Remove everything before the first H1 (nav/header junk)\nconst h1idx = content.search(/\\n#\\s+/);\nif (h1idx > 200) content = content.substring(h1idx);\n\n// Trim\ncontent = content.substring(0, 6000).trim();\n\nconst prompt = `You are a professional resume writer and career coach helping a senior network/infrastructure engineer apply for a job.\n\nJOB POSTING URL: ${url}\n\nJOB POSTING CONTENT (scraped markdown):\n${content}\n\nCANDIDATE BASE RESUME:\n${resumeText}\n\nTASK: Extract the job details and generate a complete tailored application package.\nReturn ONLY valid JSON \u2014 no markdown fences, no extra text:\n\n{\n  \"job\": {\n    \"title\": \"job title from the posting\",\n    \"company\": \"company name (if not shown, use the domain name)\",\n    \"location\": \"city/state or Remote\",\n    \"salary\": \"salary range as shown, or empty string\",\n    \"is_remote\": true or false,\n    \"role_type\": \"one of: SRE, Network Engineer, DevOps, Platform Engineer, Cloud Engineer, Infrastructure Engineer, Other\",\n    \"tags\": [\"up to 8 key technology and skill tags extracted from the posting\"]\n  },\n  \"resume_sections\": {\n    \"summary\": \"2-3 sentence professional summary written specifically for this role at this company\",\n    \"core_competencies\": [\"10-12 competency phrases most relevant to this specific job \u2014 from the candidate's real skills\"],\n    \"experience\": [\n      {\n        \"company\": \"exact company name\",\n        \"title\": \"exact title held\",\n        \"dates\": \"date range\",\n        \"bullets\": [\"2-4 achievement bullets rewritten to lead with skills this job values most \u2014 preserve all specific metrics\"]\n      }\n    ],\n    \"technical_skills\": \"Technical skills section with technologies most relevant to this role listed first\",\n    \"education\": \"Bachelor of Applied Science, Information Security Systems | ITT Technical Institute\\\\nBachelor of Applied Science, Electronics/Communications Engineering Technology | ITT Technical Institute\\\\nAssociate of Applied Science, Computer/Electronics Engineering Technology | ITT Technical Institute\"\n  },\n  \"cover_letter\": \"Full 3-4 paragraph cover letter. Paragraph 1: specific hook referencing the company and role. Paragraph 2: 2-3 most relevant experiences with metrics. Paragraph 3: specific value proposition for this role. Paragraph 4: professional close with call to action.\"\n}`;\n\nreturn [{ json: { url, prompt } }];\n"
+      },
+      "id": "b4",
+      "name": "Build Apply Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({model: \"claude-sonnet-4-6\", max_tokens: 8096, messages: [{role: \"user\", content: $json.prompt}]}) }}",
+        "options": {}
+      },
+      "id": "b5",
+      "name": "Claude Generate Docs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp   = $input.first().json;\nconst urlRef = $('Extract URL').first().json.url;\n\nlet result = {};\nconst raw  = resp.content?.[0]?.text || '';\n\ntry {\n  const cleaned = raw.replace(/```json\\s*/g,'').replace(/```\\s*/g,'').trim();\n  result = JSON.parse(cleaned);\n} catch(e) {\n  result = {\n    job: { title: 'Unknown', company: 'Unknown', location: '', salary: '', is_remote: false, role_type: 'Other', tags: [] },\n    resume_sections: null,\n    cover_letter: raw || 'Generation failed.'\n  };\n}\n\nconst job = result.job || {};\nconst s   = result.resume_sections;\n\nfunction slugify(str, max) {\n  return (str || '').replace(/[^\\w\\s-]/g,'').replace(/\\s+/g,' ').trim().substring(0, max || 60);\n}\n\nconst docDate     = new Date().toISOString().split('T')[0];\nconst folderName  = slugify(`${job.company} - ${job.title}`, 80);\nconst resumeTitle = `Resume - ${slugify(job.title,45)} - ${(job.company||'').substring(0,25)} ${docDate}`;\nconst clTitle     = `Cover Letter - ${slugify(job.title,40)} - ${(job.company||'').substring(0,25)} ${docDate}`;\n\nlet resumeText = '';\nif (s) {\n  const expSection = (s.experience || []).map(exp => {\n    const bullets = (exp.bullets || []).map(b => '    \\u2022 ' + b).join('\\n');\n    const roleInfo = [exp.title, exp.dates].filter(Boolean).join('  |  ');\n    return `${(exp.company||'').toUpperCase()}\\n${roleInfo}\\n${bullets}`;\n  }).join('\\n\\n');\n\n  resumeText = [\n    'GADGET',\n    'Walla Walla, WA  \\u2022  505.926.1010  \\u2022  your.email@example.com  \\u2022  https://www.gadget.com',\n    '',\n    `Tailored for: ${job.title} at ${job.company}`,\n    '',\n    '------------------------------------------------------------',\n    'PROFESSIONAL SUMMARY',\n    '------------------------------------------------------------',\n    s.summary || '',\n    '',\n    '------------------------------------------------------------',\n    'CORE COMPETENCIES',\n    '------------------------------------------------------------',\n    (s.core_competencies || []).join('  \\u2022  '),\n    '',\n    '------------------------------------------------------------',\n    'PROFESSIONAL EXPERIENCE',\n    '------------------------------------------------------------',\n    expSection,\n    '',\n    '------------------------------------------------------------',\n    'TECHNICAL SKILLS',\n    '------------------------------------------------------------',\n    s.technical_skills || '',\n    '',\n    '------------------------------------------------------------',\n    'EDUCATION',\n    '------------------------------------------------------------',\n    s.education || '',\n  ].join('\\n');\n} else {\n  resumeText = 'Resume generation failed. Raw Claude output:\\n' + raw.substring(0, 2000);\n}\n\nconst coverLetterText = [\n  `${job.company}`,\n  `Re: ${job.title}`,\n  `Date: ${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}`,\n  '',\n  result.cover_letter || 'Cover letter generation failed.',\n  '',\n  'Sincerely,',\n  'Gadget',\n  'your.email@example.com  |  505.926.1010',\n  'https://www.gadget.com',\n].join('\\n');\n\n// Pre-build batchUpdate bodies so HTTP nodes don't need complex inline expressions\nconst resumeBatchBody = JSON.stringify({\n  requests: [{ insertText: { location: { index: 1 }, text: resumeText } }]\n});\nconst clBatchBody = JSON.stringify({\n  requests: [{ insertText: { location: { index: 1 }, text: coverLetterText } }]\n});\n\nreturn [{ json: {\n  job, url: urlRef,\n  resume_text: resumeText, cover_letter_text: coverLetterText,\n  resume_batch_body: resumeBatchBody, cl_batch_body: clBatchBody,\n  folder_name: folderName, resume_title: resumeTitle, cl_title: clTitle,\n}}];\n"
+      },
+      "id": "b6",
+      "name": "Parse Apply Docs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://docs.googleapis.com/v1/documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({title: $json.resume_title}) }}",
+        "options": {}
+      },
+      "id": "b7",
+      "name": "Create Resume Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Apply Docs').first().json.resume_batch_body }}",
+        "options": {}
+      },
+      "id": "b8",
+      "name": "Insert Resume Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1552,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://docs.googleapis.com/v1/documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({title: $('Parse Apply Docs').first().json.cl_title}) }}",
+        "options": {}
+      },
+      "id": "b9",
+      "name": "Create Cover Letter Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Apply Docs').first().json.cl_batch_body }}",
+        "options": {}
+      },
+      "id": "b10",
+      "name": "Insert Cover Letter Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1984,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({name: $(\"Parse Apply Docs\").first().json.folder_name, mimeType: \"application/vnd.google-apps.folder\", parents: [\"1-uFlRPv_pIVNoOdQm8Q8cXSMcZa_bB5X\"]}) }}",
+        "options": {}
+      },
+      "id": "b11",
+      "name": "Create App Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2208,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Resume Doc').first().json.documentId }}?addParents={{ $json.id }}&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{}",
+        "options": {}
+      },
+      "id": "b12",
+      "name": "Move Resume to Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2432,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Cover Letter Doc').first().json.documentId }}?addParents={{ $('Create App Folder').first().json.id }}&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{}",
+        "options": {}
+      },
+      "id": "b13",
+      "name": "Move Cover Letter to Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst d       = $('Parse Apply Docs').first().json;\nconst resume  = $('Create Resume Doc').first().json;\nconst cl      = $('Create Cover Letter Doc').first().json;\nconst folder  = $('Create App Folder').first().json;\nconst job     = d.job;\n\nconst folderId  = folder.id;\nconst folderUrl = 'https://drive.google.com/drive/folders/' + folderId;\nconst resumeUrl = 'https://docs.google.com/document/d/' + resume.documentId + '/edit';\nconst clUrl     = 'https://docs.google.com/document/d/' + cl.documentId + '/edit';\nconst today     = new Date().toISOString().split('T')[0];\n\nfunction para(text) {\n  return {object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:(text||'').substring(0,2000)}}]}};\n}\nfunction h2(text) {\n  return {object:'block',type:'heading_2',heading_2:{rich_text:[{type:'text',text:{content:text}}]}};\n}\n\nconst children = [\n  h2('\\uD83D\\uDCC1 Application Documents'),\n  para('\\uD83D\\uDCC1 Drive Folder: ' + folderUrl),\n  para('\\uD83D\\uDCDD Resume: ' + resumeUrl),\n  para('\\u2709\\uFE0F Cover Letter: ' + clUrl),\n  {object:'block',type:'divider',divider:{}},\n  h2('\\uD83D\\uDD17 Source'),\n  para('Manually added via apply-url webhook'),\n  para('URL: ' + (d.url || '')),\n];\n\nconst body = {\n  parent: { database_id: \"YOUR_NOTION_DATABASE_ID\" },\n  properties: {\n    \"Job Title\":   { title:      [{ text: { content: (job.title   ||'Unknown').substring(0,200) } }] },\n    \"Company\":     { rich_text:  [{ text: { content: (job.company ||'Unknown').substring(0,200) } }] },\n    \"Source\":      { select:     { name: 'Manual' } },\n    \"Apply URL\":   { url: d.url || null },\n    \"Location\":    { rich_text:  [{ text: { content: (job.location||'').substring(0,200) } }] },\n    \"Score\":       { number: 0 },\n    \"Role Type\":   { select:     { name: job.role_type || 'Other' } },\n    \"Priority\":    { select:     { name: 'High' } },\n    \"Tags\":        { multi_select: (job.tags||[]).map(t => ({name: String(t).substring(0,100)})) },\n    \"Status\":      { select:     { name: 'Docs Ready' } },\n    \"Drive Folder\":{ url: folderUrl },\n    \"Date Found\":  { date:       { start: today } },\n  },\n  children,\n};\n\nconst salaryLine = job.salary ? '\\n\\uD83D\\uDCB0 ' + job.salary : '';\nconst locLine    = job.location ? '\\n\\uD83D\\uDCCD ' + job.location + (job.is_remote ? ' (Remote)' : '') : '';\n\nconst discordMsg = [\n  '\\uD83D\\uDCC4 **Application docs ready!** (Manual add)',\n  '**' + (job.title||'?') + '** @ ' + (job.company||'?'),\n  job.salary   ? '\\uD83D\\uDCB0 ' + job.salary   : '',\n  job.location ? '\\uD83D\\uDCCD ' + job.location + (job.is_remote ? ' (Remote)' : '') : '',\n  '',\n  '\\uD83D\\uDCC1 [Application Folder](' + folderUrl + ')',\n  '\\uD83D\\uDCDD [Tailored Resume](' + resumeUrl + ')',\n  '\\u2709\\uFE0F [Cover Letter](' + clUrl + ')',\n  '',\n  'Apply: ' + (d.url || ''),\n].filter(Boolean).join('\\n');\n\nreturn [{ json: { notion_body: JSON.stringify(body), discord_msg: discordMsg } }];\n"
+      },
+      "id": "b14",
+      "name": "Build Notion Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ntn_c11964516799KN4p17wJ9fPsGGiaebwenZKkYQ5CsEp9m1"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notion_body }}",
+        "options": {}
+      },
+      "id": "b15",
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3088,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $('Build Notion Body').first().json.discord_msg }}"
+            },
+            {
+              "name": "username",
+              "value": "Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b16",
+      "name": "Discord Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3312,
+        304
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract URL": {
+      "main": [
+        [
+          {
+            "node": "Fetch via Jina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch via Jina": {
+      "main": [
+        [
+          {
+            "node": "Build Apply Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Apply Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Generate Docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Generate Docs": {
+      "main": [
+        [
+          {
+            "node": "Parse Apply Docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Apply Docs": {
+      "main": [
+        [
+          {
+            "node": "Create Resume Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Resume Doc": {
+      "main": [
+        [
+          {
+            "node": "Insert Resume Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Resume Content": {
+      "main": [
+        [
+          {
+            "node": "Create Cover Letter Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Cover Letter Doc": {
+      "main": [
+        [
+          {
+            "node": "Insert Cover Letter Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Cover Letter Content": {
+      "main": [
+        [
+          {
+            "node": "Create App Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create App Folder": {
+      "main": [
+        [
+          {
+            "node": "Move Resume to Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Resume to Folder": {
+      "main": [
+        [
+          {
+            "node": "Move Cover Letter to Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Cover Letter to Folder": {
+      "main": [
+        [
+          {
+            "node": "Build Notion Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notion Body": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Notion Page": {
+      "main": [
+        [
+          {
+            "node": "Discord Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "any",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "bcb03d42-d321-4aa7-b8be-b878af0737f9",
+  "versionCounter": 47,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-30T06:18:08.197Z",
+      "createdAt": "2026-03-30T06:18:08.197Z",
+      "role": "workflow:owner",
+      "workflowId": "KkBKtNTPN0LXFwKj",
+      "projectId": "wKfdBpMS0JmOoV5j",
+      "project": {
+        "updatedAt": "2025-11-16T22:10:59.419Z",
+        "createdAt": "2025-11-16T22:06:13.609Z",
+        "id": "wKfdBpMS0JmOoV5j",
+        "name": "Gadget Man <your.email@example.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-11-16T22:06:13.610Z",
+            "createdAt": "2025-11-16T22:06:13.610Z",
+            "userId": "c7ebb70a-2b7c-4092-ab61-54402a19a5fe",
+            "projectId": "wKfdBpMS0JmOoV5j",
+            "user": {
+              "updatedAt": "2026-06-12T04:12:22.000Z",
+              "createdAt": "2025-11-16T22:06:12.457Z",
+              "id": "c7ebb70a-2b7c-4092-ab61-54402a19a5fe",
+              "email": "your.email@example.com",
+              "firstName": "Gadget",
+              "lastName": "Man",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-11-16T22:11:18.519Z",
+                "personalization_survey_n8n_version": "1.119.2",
+                "companyType": "personal",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "firstSuccessfulWorkflowId": "pNZcjNdl4m4fAflb",
+                "userActivatedAt": 1764586854414,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1774392316845
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-06-11",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": []
+}

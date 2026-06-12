@@ -1,0 +1,762 @@
+{
+  "updatedAt": "2026-05-12T12:26:17.420Z",
+  "createdAt": "2026-03-30T05:31:29.604Z",
+  "id": "FqbL3EMXvA1xxZDJ",
+  "name": "Job Application Doc Generator",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "a1",
+      "name": "Poll Every 10 Min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -256,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/databases/YOUR_NOTION_DATABASE_ID/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ntn_c11964516799KN4p17wJ9fPsGGiaebwenZKkYQ5CsEp9m1"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{\"filter\": {\"and\": [{\"property\": \"Status\", \"select\": {\"equals\": \"Applying\"}}, {\"property\": \"Drive Folder\", \"url\": {\"is_empty\": true}}]}}",
+        "options": {}
+      },
+      "id": "a2",
+      "name": "Query Applying Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -48,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst results = ($json.results || []);\nif (!results.length) return [];  // nothing to process \u2014 workflow stops cleanly\nreturn [{ json: results[0] }];   // process one at a time; next poll picks up the rest\n"
+      },
+      "id": "a3",
+      "name": "Check & Extract Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst page = $json;\nconst props = page.properties || {};\n\nconst title    = (props['Job Title']?.title?.[0]?.text?.content || 'Unknown Title').trim();\nconst company  = (props['Company']?.rich_text?.[0]?.text?.content || 'Unknown Company').trim();\nconst roleType = props['Role Type']?.select?.name || 'Other';\nconst tags     = (props['Tags']?.multi_select || []).map(t => t.name);\nconst applyUrl = props['Apply URL']?.url || '';\nconst score    = props['Score']?.number || 0;\nconst fitSummary = props['Fit Summary']?.rich_text?.[0]?.text?.content || '';\n\nfunction slugify(s, max) {\n  return s.replace(/[^\\w\\s-]/g, '').replace(/\\s+/g, ' ').trim().substring(0, max || 60);\n}\n\nconst docDate     = new Date().toISOString().split('T')[0];\nconst folderName  = slugify(`${company} - ${title}`, 80);\nconst resumeTitle = `Resume - ${slugify(title, 45)} - ${company.substring(0, 25)} ${docDate}`;\nconst clTitle     = `Cover Letter - ${slugify(title, 40)} - ${company.substring(0, 25)} ${docDate}`;\n\nreturn [{ json: {\n  page_id:      page.id,\n  title, company, role_type: roleType, tags, apply_url: applyUrl, score, fit_summary: fitSummary,\n  folder_name: folderName, resume_title: resumeTitle, cl_title: clTitle,\n}}];\n"
+      },
+      "id": "a4",
+      "name": "Extract Page Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.notion.com/v1/blocks/{{ $json.page_id }}/children?page_size=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ntn_c11964516799KN4p17wJ9fPsGGiaebwenZKkYQ5CsEp9m1"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a5",
+      "name": "Get Page Blocks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst blocks = $json.results || [];\nconst pageInfo = $('Extract Page Info').first().json;\n\nlet inDesc = false;\nconst parts = [];\n\nfor (const block of blocks) {\n  if (block.type === 'heading_2') {\n    const text = block.heading_2?.rich_text?.[0]?.text?.content || '';\n    if (text.includes('Full Job Description')) { inDesc = true; continue; }\n    if (inDesc) break;\n  }\n  if (block.type === 'divider' && inDesc) break;\n  if (inDesc && block.type === 'paragraph') {\n    const t = block.paragraph?.rich_text?.[0]?.text?.content || '';\n    if (t) parts.push(t);\n  }\n}\n\nconst description = parts.join('\\n').substring(0, 5000);\nreturn [{ json: { ...pageInfo, description } }];\n"
+      },
+      "id": "a6",
+      "name": "Extract Description",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $json;\nconst resumeText = $json.resumeText || 'ERROR: resumeText missing from Resume Content node';\n\nconst tagsList = (j.tags || []).join(', ') || 'Not specified';\nconst desc     = (j.description || 'No description provided').substring(0, 3500);\n\nconst prompt = `You are a professional resume writer helping a senior network/infrastructure engineer tailor application materials for a specific job opening.\n\nCANDIDATE BASE RESUME \u2014 USE THIS AS THE AUTHORITATIVE SOURCE:\n${resumeText}\n\nTARGET POSITION:\nTitle: ${j.title}\nCompany: ${j.company}\nRole Type: ${j.role_type}\nKey Skills Needed: ${tagsList}\n\nJOB DESCRIPTION:\n${desc}\n\nINSTRUCTIONS:\nTailor the candidate's resume for this specific role. Keep all factual claims accurate \u2014 do not invent experience or credentials. Reorder emphasis within roles to highlight skills this job values, but PRESERVE ALL CONTENT. Preserve all specific metrics (1,200 routers, 100 servers, 1,600 rules, 350 locations, etc.).\n\nCRITICAL \u2014 ALL 6 WORK HISTORY ENTRIES ARE REQUIRED in the experience array, in this exact order:\n  1. Expeditors International (2025\u2013Present) \u2014 include 4\u20135 bullets, emphasize most relevant work\n  2. Umatilla Electric Cooperative (2020\u20132024) \u2014 include 4\u20135 bullets\n  3. University of New Mexico Health Sciences Center (2016\u20132019) \u2014 include 3\u20134 bullets\n  4. SAIC / Sandia National Laboratories (2014\u20132015) \u2014 include 2\u20133 bullets\n  5. Cricket Communications (2012\u20132013) \u2014 include 2\u20133 bullets\n  6. New Mexico Department of Information Technology (2006\u20132012) \u2014 include 2\u20133 bullets\nDO NOT drop, combine, skip, or merge any of these 6 entries. Every one must appear.\n\nReturn ONLY valid JSON with no markdown fences, no extra text:\n\n{\n  \"resume_sections\": {\n    \"summary\": \"2\u20133 sentence professional summary written specifically for this role at this company\",\n    \"core_competencies\": [\"12 competency phrases most relevant to this specific job \u2014 pick from the candidate's real skills, ordered by relevance to this role\"],\n    \"experience\": [\n      {\n        \"company\": \"exact company name\",\n        \"title\": \"exact title held\",\n        \"dates\": \"date range\",\n        \"location\": \"city, state or Remote\",\n        \"bullets\": [\"achievement bullets rewritten to lead with skills this job values most \u2014 preserve all specific metrics\"]\n      }\n    ],\n    \"technical_skills\": \"Technical skills paragraph with technologies most relevant to this role listed first \u2014 preserve all skills from the base resume, reordered by relevance\",\n    \"education\": \"Bachelor of Applied Science, Information Security Systems | ITT Technical Institute\\nBachelor of Applied Science, Electronics/Communications Engineering Technology | ITT Technical Institute\\nAssociate of Applied Science, Computer/Electronics Engineering Technology | ITT Technical Institute\\nCertifications: CCNA (2011, 97%) | BICSI Cable Installation\"\n  },\n  \"cover_letter\": \"Full 3\u20134 paragraph cover letter.\\n\\nParagraph 1 (hook): Open with something specific about ${j.company} and why this role is a strong fit \u2014 reference the company's industry, mission, or something distinctive.\\n\\nParagraph 2 (proof): Highlight 2\u20133 most relevant experiences with specific metrics. Connect directly to requirements in the job description.\\n\\nParagraph 3 (value): Explain the specific value the candidate brings \u2014 what problems they have solved that map directly to what this company needs.\\n\\nParagraph 4 (close): Professional closing with enthusiasm and call to action.\"\n}`;\n\nreturn [{ json: { ...j, prompt } }];\n"
+      },
+      "id": "a7",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "x-api-key",
+              "value": "YOUR_ANTHROPIC_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({model: \"claude-sonnet-4-6\", max_tokens: 12000, messages: [{role: \"user\", content: $json.prompt}]}) }}",
+        "options": {}
+      },
+      "id": "a8",
+      "name": "Claude Generate Docs",
+      "position": [
+        1552,
+        304
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp = $input.first().json;\nconst j    = $('Build Prompt').first().json;\n\n// DEBUG: expose what resp actually contains\nconst respKeys   = Object.keys(resp);\nconst hasContent = Array.isArray(resp.content);\nconst hasChoices = Array.isArray(resp.choices);\nconst anthropicRaw = hasContent ? (resp.content[0] || {}).text || '' : '';\nconst openaiRaw    = hasChoices ? ((resp.choices[0] || {}).message || {}).content || '' : '';\nconst raw = anthropicRaw || openaiRaw || '';\n\nlet result = {};\ntry {\n  const BT = String.fromCharCode(96);\nconst BT3 = BT + BT + BT;\nconst cleaned = raw\n  .replace(new RegExp(BT3 + 'json\\s*', 'g'), '')\n  .replace(new RegExp(BT3 + '\\s*', 'g'), '')\n  .trim();\n  result = JSON.parse(cleaned);\n} catch(e) {\n  result = { resume_sections: null, cover_letter: raw || 'Parse failed.' };\n}\n\nconst s = result.resume_sections;\n\n// DEBUG: if still failing, surface detail in the resume doc\nconst debugInfo = [\n  'resp keys: ' + respKeys.join(', '),\n  'hasContent: ' + hasContent,\n  'hasChoices: ' + hasChoices,\n  'raw length: ' + raw.length,\n  'raw start:  ' + raw.substring(0,120),\n].join('\\n');\n\nconst DARK_BLUE = { color: { rgbColor: { red: 0.110, green: 0.239, blue: 0.376 } } };\nconst MED_GRAY  = { color: { rgbColor: { red: 0.40,  green: 0.40,  blue: 0.40  } } };\n\nlet resumeText    = '';\nlet docPos        = 1;\nconst fmtRequests = [];\n\nfunction addPart(text, textStyle, align) {\n  if (!text) return;\n  const start = docPos;\n  resumeText += text;\n  docPos += text.length;\n  const end = docPos;\n  if (textStyle) {\n    let styleEnd = end;\n    for (let i = text.length - 1; i >= 0 && text[i] === '\\n'; i--) styleEnd--;\n    if (styleEnd > start) {\n      const ts = {}, fields = [];\n      if (textStyle.bold      !== undefined) { ts.bold   = textStyle.bold;   fields.push('bold'); }\n      if (textStyle.italic    !== undefined) { ts.italic = textStyle.italic; fields.push('italic'); }\n      if (textStyle.fontSize  !== undefined) { ts.fontSize = { magnitude: textStyle.fontSize, unit: 'PT' }; fields.push('fontSize'); }\n      if (textStyle.foregroundColor) { ts.foregroundColor = textStyle.foregroundColor; fields.push('foregroundColor'); }\n      if (fields.length) fmtRequests.push({ updateTextStyle: { range: { startIndex: start, endIndex: styleEnd }, textStyle: ts, fields: fields.join(',') }});\n    }\n  }\n  if (align) fmtRequests.push({ updateParagraphStyle: { range: { startIndex: start, endIndex: end }, paragraphStyle: { alignment: align }, fields: 'alignment' }});\n}\n\nfunction sectionHeader(title) {\n  addPart(title + '\\n', { bold: true, fontSize: 11, foregroundColor: DARK_BLUE });\n}\n\nif (s) {\n  addPart('GADGET\\n', { bold: true, fontSize: 18 }, 'CENTER');\n  addPart('Walla Walla, WA  \u2022  505.926.1010  \u2022  your.email@example.com  \u2022  gadget.com\\n', { fontSize: 10 }, 'CENTER');\n  addPart('\\n');\n  addPart('Tailored for: ' + j.title + ' \u2014 ' + j.company + '\\n', { italic: true, fontSize: 9, foregroundColor: MED_GRAY }, 'CENTER');\n  addPart('\\n');\n  sectionHeader('PROFESSIONAL SUMMARY');\n  addPart((s.summary || '') + '\\n', { fontSize: 10 });\n  addPart('\\n');\n  sectionHeader('CORE COMPETENCIES');\n  addPart((s.core_competencies || []).join('  \u2022  ') + '\\n', { fontSize: 10 });\n  addPart('\\n');\n  sectionHeader('PROFESSIONAL EXPERIENCE');\n  for (const exp of (s.experience || [])) {\n    addPart((exp.company || '').toUpperCase() + '\\n', { bold: true, fontSize: 11 });\n    const loc = exp.location ? '  \u2014  ' + exp.location : '';\n    addPart((exp.title || '') + loc + '  |  ' + (exp.dates || '') + '\\n', { italic: true, fontSize: 10 });\n    for (const bullet of (exp.bullets || [])) {\n      addPart('    \u2022  ' + bullet + '\\n', { fontSize: 10 });\n    }\n    addPart('\\n');\n  }\n  sectionHeader('TECHNICAL SKILLS');\n  addPart((s.technical_skills || '') + '\\n', { fontSize: 10 });\n  addPart('\\n');\n  sectionHeader('EDUCATION & CERTIFICATIONS');\n  addPart((s.education || '') + '\\n', { fontSize: 10 });\n} else {\n  addPart('=== RESUME GENERATION DEBUG ===\\n', { bold: true, fontSize: 12 });\n  addPart(debugInfo + '\\n', { fontSize: 10 });\n  addPart('\\n=== RAW CLAUDE OUTPUT (first 2000 chars) ===\\n', { bold: true, fontSize: 10 });\n  addPart((raw || '(empty)').substring(0, 2000) + '\\n', { fontSize: 9 });\n}\n\nconst coverLetterText = [\n  j.company, 'Re: ' + j.title,\n  'Date: ' + new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }),\n  '', result.cover_letter || 'Cover letter generation failed.', '',\n  'Sincerely,', 'Gadget',\n  'your.email@example.com  |  505.926.1010  |  gadget.com',\n].join('\\n');\n\nconst resumeBatchBody = JSON.stringify({ requests: [{ insertText: { location: { index: 1 }, text: resumeText } }, ...fmtRequests] });\nconst clBatchBody = JSON.stringify({ requests: [{ insertText: { location: { index: 1 }, text: coverLetterText } }] });\n\nreturn [{ json: { ...j, resume_text: resumeText, cover_letter_text: coverLetterText,\n  resume_batch_body: resumeBatchBody, cl_batch_body: clBatchBody } }];\n"
+      },
+      "id": "a9",
+      "name": "Parse Docs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://docs.googleapis.com/v1/documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({title: $json.resume_title}) }}",
+        "options": {}
+      },
+      "id": "a10",
+      "name": "Create Resume Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1984,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Docs').first().json.resume_batch_body }}",
+        "options": {}
+      },
+      "id": "a11",
+      "name": "Insert Resume Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2208,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://docs.googleapis.com/v1/documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({title: $('Parse Docs').first().json.cl_title}) }}",
+        "options": {}
+      },
+      "id": "a12",
+      "name": "Create Cover Letter Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2432,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Docs').first().json.cl_batch_body }}",
+        "options": {}
+      },
+      "id": "a13",
+      "name": "Insert Cover Letter Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({name: $(\"Parse Docs\").first().json.folder_name, mimeType: \"application/vnd.google-apps.folder\", parents: [\"1-uFlRPv_pIVNoOdQm8Q8cXSMcZa_bB5X\"]}) }}",
+        "options": {}
+      },
+      "id": "a14",
+      "name": "Create App Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2864,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Resume Doc').first().json.documentId }}?addParents={{ $json.id }}&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{}",
+        "options": {}
+      },
+      "id": "a15",
+      "name": "Move Resume to Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3088,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Cover Letter Doc').first().json.documentId }}?addParents={{ $('Create App Folder').first().json.id }}&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{}",
+        "options": {}
+      },
+      "id": "a16",
+      "name": "Move Cover Letter to Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3312,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst d       = $('Parse Docs').first().json;\nconst resume  = $('Create Resume Doc').first().json;\nconst cl      = $('Create Cover Letter Doc').first().json;\nconst folder  = $('Create App Folder').first().json;\n\nconst folderId  = folder.id;\nconst folderUrl = 'https://drive.google.com/drive/folders/' + folderId;\nconst resumeUrl = 'https://docs.google.com/document/d/' + resume.documentId + '/edit';\nconst clUrl     = 'https://docs.google.com/document/d/' + cl.documentId + '/edit';\n\nconst discordMsg = [\n  '\\uD83D\\uDCC4 **Application docs ready!**',\n  `**${d.title}** @ ${d.company}`,\n  `Score: ${d.score}  \\u2022  ${d.role_type}`,\n  '',\n  `\\uD83D\\uDCC1 [Application Folder](${folderUrl})`,\n  `\\uD83D\\uDCDD [Tailored Resume](${resumeUrl})`,\n  `\\u2709\\uFE0F [Cover Letter](${clUrl})`,\n  '',\n  `Apply: ${d.apply_url || '(see Notion page)'}`,\n].join('\\n');\n\nreturn [{ json: {\n  page_id:      d.page_id,\n  discord_msg:  discordMsg,\n  notion_patch: JSON.stringify({\n    properties: {\n      'Status':       { select: { name: 'Docs Ready' } },\n      'Drive Folder': { url: folderUrl },\n    }\n  }),\n}}];\n"
+      },
+      "id": "a17",
+      "name": "Build Update Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.page_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ntn_c11964516799KN4p17wJ9fPsGGiaebwenZKkYQ5CsEp9m1"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notion_patch }}",
+        "options": {}
+      },
+      "id": "a18",
+      "name": "Update Notion Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3744,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $('Build Update Data').first().json.discord_msg }}"
+            },
+            {
+              "name": "username",
+              "value": "Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a19",
+      "name": "Discord Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3968,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// \u2500\u2500 EDIT YOUR RESUME HERE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// This is the only place the resume text lives. Update it here when your\n// resume changes \u2014 no other node needs to be touched.\nconst resumeText = \"Gadget\\nWalla Walla, WA | 505.926.1010 | your.email@example.com | linkedin.com/in/gadget | gadget.com\\n\\nSenior Network & Security Engineer\\nEnterprise Network Architecture | Security Operations | Multi-Site Infrastructure | PCI-DSS Compliance\\n\\nSenior network and security engineer with 20+ years of experience designing, implementing, and securing enterprise infrastructure across large distributed footprints. Proven track record managing networks spanning hundreds of locations, hardening security posture to compliance standards, and delivering high-availability connectivity for business-critical operations. Known for process reengineering that compresses timelines and for documentation quality that outlasts the engineer who wrote it. Equally comfortable as an individual contributor and as a technical lead shaping strategy and mentoring teams.\\n\\nCORE COMPETENCIES\\nNetwork Architecture & Design | Security Operations & Hardening | PCI-DSS Compliance\\nCisco Meraki (Enterprise & Branch) | Firewall Lifecycle Management | SD-WAN Design & Deployment\\nOSPF / BGP / MPLS / DMVPN | SIEM Monitoring (Splunk) | VPN Infrastructure\\nMulti-Site Network Management | Vulnerability Assessment & Remediation | Unified Communications (Avaya / Cisco UCM)\\nCloud Hybrid Connectivity (Azure) | Network Segmentation & Defense-in-Depth | Documentation & IPAM\\n\\nPROFESSIONAL EXPERIENCE\\n\\nData Centers Network Engineer | Expeditors International \\u2014 Remote | 2025\\u2013Present\\nDesign and implement enterprise-grade network infrastructure for a global logistics company operating across 350 locations with 19,000+ employees. Serve as a key technical contributor to a team responsible for the reliability, performance, and security of a network that underpins worldwide operations.\\n\\u2022 Architect and maintain Cisco routing and switching infrastructure including Cisco Nexus platforms, configuring VLANs, OSPF, BGP, QoS policies, and ACLs to ensure optimal traffic flow and segmentation across distributed sites\\n\\u2022 Manage Cisco WLC and Juniper MIST wireless infrastructure, ensuring consistent, high-performance connectivity across all locations\\n\\u2022 Administer and optimize HP/Aruba switching infrastructure, including VLAN design, spanning tree, and access control\\n\\u2022 Lead enterprise-wide Fortinet SD-WAN deployment \\u2014 designing traffic routing policies to optimize application performance and reduce WAN costs across the distributed footprint\\n\\u2022 Manage hybrid cloud connectivity including Azure Express Routes, ensuring secure and performant access to cloud-hosted workloads\\n\\u2022 Conduct network capacity planning to ensure infrastructure scales to meet business growth and operational demands\\n\\u2022 Develop and maintain comprehensive network documentation including topology diagrams, runbooks, and configuration standards\\nKey technologies: Cisco (Nexus, WLC, IOS), Juniper MIST, HP/Aruba, Fortinet (SD-WAN), Azure Express Routes, OSPF, BGP, MPLS, VLANs, QoS\\n\\nSystem Administrator | Umatilla Electric Cooperative \\u2014 Hermiston, OR | 2020\\u20132024\\nOwned IT network and systems infrastructure for a regional utility, with full accountability for security posture, compliance, monitoring, and operational reliability. Functioned as the primary network and security subject matter expert for the organization.\\n\\u2022 Reduced enterprise firewall ruleset from 1,600 to 400 rules by auditing, deduplicating, and restructuring policy to enforce least-privilege access and defense-in-depth principles \\u2014 directly improving security posture and simplifying ongoing lifecycle management\\n\\u2022 Ensured PCI-DSS network compliance for cardholder data environments, implementing and documenting network segmentation to isolate payment systems, validate controls, and support audit evidence collection\\n\\u2022 Monitored network and security events using Splunk and SolarWinds Orion, identifying anomalies and responding to incidents including initial triage, containment, and root cause analysis\\n\\u2022 Administered and optimized firewall infrastructure (Palo Alto, Checkpoint) including rule creation, modification, and ongoing auditing\\n\\u2022 Managed VPN infrastructure for remote access and site-to-site connectivity, ensuring secure communications for remote employees and third-party vendors\\n\\u2022 Deployed and managed Docker-based application infrastructure on VMware and Proxmox virtualization platforms, improving application availability and maintainability\\n\\u2022 Conducted vulnerability assessments and coordinated remediation with infrastructure and vendor teams to reduce attack surface\\n\\u2022 Coached and mentored junior IT staff, improving team throughput and technical capability\\nKey technologies: Palo Alto, Checkpoint, SolarWinds Orion, Splunk, VMware, Proxmox, Docker, Tipping Point IPS, VPN, VLANs, PCI-DSS\\n\\nNetwork Engineer (Lead \\u2014 1 of 2) | University of New Mexico Health Sciences Center \\u2014 Albuquerque, NM | 2016\\u20132019\\nCo-led network engineering for the largest employer in New Mexico: 7,000+ employees, 30,000+ weekly customers across hospital, clinic, and academic facilities, 1,000+ networked devices.\\n\\u2022 Designed and implemented enterprise network infrastructure including Ethernet, VLANs, OSPF routing, QoS, and converged Voice & Data networks across hospital and academic campuses\\n\\u2022 Managed multi-site Cisco and Juniper network infrastructure, implementing BGP and DNS configurations for efficient routing and cybersecurity\\n\\u2022 Spearheaded a cybersecurity hardening initiative to bring IT equipment into compliance with evolving healthcare security standards, significantly strengthening protection of sensitive patient data\\n\\u2022 Led a 2-day migration of a 12-rack, 100-server data center with minimal operational downtime, accomplished through comprehensive pre-work, resource allocation, and rehearsed execution\\n\\u2022 Designed and maintained comprehensive network documentation including topology diagrams, IP addressing, and configuration standards \\u2014 enabling operational continuity and institutional knowledge transfer\\n\\u2022 Provided technical leadership to a team of technicians and analysts, distributing tasks and building problem-solving capability across the team\\nKey technologies: Cisco, Juniper, OSPF, BGP, VLANs, QoS, Voice/Data convergence, IPS, DNS\\n\\nComputer Infrastructure Specialist (Contract \\u2014 Sandia National Laboratories) | SAIC \\u2014 Albuquerque, NM | 2014\\u20132015\\nContracted to support Non-Proliferation initiatives at Sandia National Laboratories (DOE/DoD). Applied rigorous hardening and documentation standards to classified and sensitive infrastructure.\\n\\u2022 Implemented hardening processes for IT devices and systems in support of national security operations\\n\\u2022 Produced comprehensive infrastructure documentation \\u2014 network configurations, hardware specifications, and topology detail \\u2014 at a standard required for large-format review and long-term operational integrity\\n\\u2022 Left infrastructure measurably better documented and more securely maintained than upon contract start\\n\\nSecurity Engineer | Cricket Communications \\u2014 Albuquerque, NM | 2012\\u20132013\\nLed a nationwide project to remediate network vulnerabilities and develop standardized security policies across the organization's infrastructure.\\n\\u2022 Reprogrammed 1,200+ Cisco routers in 1.5 weeks against a 6-month original schedule by reengineering the deployment process \\u2014 demonstrating process discipline and technical execution under pressure\\n\\u2022 Engineered and implemented security measures and standardized protocols across network systems, improving resilience and consistency at national scale\\n\\nNetwork Specialist II | New Mexico Department of Information Technology \\u2014 Santa Fe, NM | 2006\\u20132012\\n24/7/365 infrastructure specialist supporting statewide government networks across New Mexico, including high-profile assignments at the Governor's Mansion and executive facilities.\\n\\u2022 Administered Avaya VoIP infrastructure for 6 years \\u2014 call routing, dial plans, voicemail, SIP trunking, and coordination with telecom carriers for circuit provisioning and troubleshooting\\n\\u2022 Scored 97% on the CCNA examination, reflecting deep foundational knowledge of routing, switching, and network design\\n\\u2022 Managed government-grade network infrastructure with reliability and security requirements typical of public-sector operations\\nKey technologies: Avaya VoIP, Cisco networking, government network operations\\n\\nEDUCATION\\nBachelor of Applied Science, Information Security Systems | ITT Technical Institute\\nBachelor of Applied Science, Electronics/Communications Engineering Technology | ITT Technical Institute\\nAssociate of Applied Science, Computer/Electronics Engineering Technology | ITT Technical Institute\\nCertifications: CCNA (2011, 97%) | BICSI Cable Installation\\n\\nTECHNICAL SKILLS\\n\\nRouting & Switching: OSPF, BGP, MPLS, DMVPN, VRRP, STP, VLANs, QoS, ACLs, Cisco IOS, Cisco Nexus, HP/Aruba, Juniper\\n\\nWireless: Cisco Meraki (MX/MS/MR \\u2014 enterprise deployment + 3-year homelab), Cisco WLC, Juniper MIST\\n\\nFirewalls & Security: Palo Alto, Cisco ASA, Checkpoint, Juniper, Fortinet \\u2014 rule management, hardening, lifecycle operations; Tipping Point IPS; iptables\\n\\nSD-WAN: Fortinet (active enterprise deployment at Expeditors, 350 locations)\\n\\nCloud & Hybrid Connectivity: Azure (tunneling, Express Route management), basic AWS/GCP familiarity\\n\\nVPN: Site-to-site, remote access, DMVPN, WireGuard\\n\\nVoice & UC: Avaya VoIP (6 years production \\u2014 routing, dial plans, SIP trunking, voicemail), Cisco UCM\\n\\nCompliance: PCI-DSS (cardholder network segmentation, control implementation, audit support)\\n\\nMonitoring & SIEM: Splunk (analyst/end-user), SolarWinds Orion, Prometheus, Grafana, Loki, Netdata\\n\\nLoad Balancers: F5 LTM/GTM (conceptual; cross-functional team collaboration)\\n\\nSystems & Virtualization: Linux (RedHat, CentOS), Windows Server, VMware, Proxmox, Docker, Kubernetes\\n\\nAutomation & Tooling: Ansible (in training), Python (in training), n8n, Bash, Traefik, CrowdSec\\n\\nDocumentation: Network topology diagrams, IPAM, runbooks, configuration standards, large-format infrastructure documentation\";\n\nreturn [{ json: { ...$json, resumeText } }];\n"
+      },
+      "id": "rc1",
+      "name": "Resume Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prevents double-processing if the 10-min poll fires while a job is mid-run.\n// Uses per-workflow static data (free, built-in, survives restarts).\nconst state = $getWorkflowStaticData('global');\nconst pageId = $json.id;\nconst inProgress = state.processing || {};\nconst staleAfterMs = 30 * 60 * 1000; // 30 min safety release\n\n// Clear stale locks first\nconst now = Date.now();\nfor (const [pid, ts] of Object.entries(inProgress)) {\n  if (now - ts > staleAfterMs) delete inProgress[pid];\n}\n\nif (inProgress[pageId]) {\n  return []; // already being processed \u2014 skip\n}\n\ninProgress[pageId] = now;\nstate.processing = inProgress;\n\nreturn [{ json: $json }];\n"
+      },
+      "id": "gd1",
+      "name": "Guard Duplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Release the processing lock for this page so future polls can re-process\n// if the job ever gets reset back to 'Applying' status.\nconst state = $getWorkflowStaticData('global');\nconst pageId = $('Guard Duplicate').first().json.id;\nconst inProgress = state.processing || {};\ndelete inProgress[pageId];\nstate.processing = inProgress;\nreturn [{ json: { cleared: pageId } }];\n"
+      },
+      "id": "cl1",
+      "name": "Clear Lock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        304
+      ]
+    }
+  ],
+  "connections": {
+    "Poll Every 10 Min": {
+      "main": [
+        [
+          {
+            "node": "Query Applying Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Applying Jobs": {
+      "main": [
+        [
+          {
+            "node": "Check & Extract Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check & Extract Page": {
+      "main": [
+        [
+          {
+            "node": "Guard Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Page Info": {
+      "main": [
+        [
+          {
+            "node": "Get Page Blocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Page Blocks": {
+      "main": [
+        [
+          {
+            "node": "Extract Description",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Description": {
+      "main": [
+        [
+          {
+            "node": "Resume Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Generate Docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Generate Docs": {
+      "main": [
+        [
+          {
+            "node": "Parse Docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Docs": {
+      "main": [
+        [
+          {
+            "node": "Create Resume Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Resume Doc": {
+      "main": [
+        [
+          {
+            "node": "Insert Resume Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Resume Content": {
+      "main": [
+        [
+          {
+            "node": "Create Cover Letter Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Cover Letter Doc": {
+      "main": [
+        [
+          {
+            "node": "Insert Cover Letter Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Cover Letter Content": {
+      "main": [
+        [
+          {
+            "node": "Create App Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create App Folder": {
+      "main": [
+        [
+          {
+            "node": "Move Resume to Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Resume to Folder": {
+      "main": [
+        [
+          {
+            "node": "Move Cover Letter to Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Cover Letter to Folder": {
+      "main": [
+        [
+          {
+            "node": "Build Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Update Data": {
+      "main": [
+        [
+          {
+            "node": "Update Notion Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Notion Status": {
+      "main": [
+        [
+          {
+            "node": "Discord Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Extract Page Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Content": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord Notify": {
+      "main": [
+        [
+          {
+            "node": "Clear Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  },
+  "staticData": {
+    "node:Poll Every 10 Min": {
+      "recurrenceRules": []
+    },
+    "global": {
+      "processing": {
+        "37b04750-675f-8094-be90-e8333b2787d6": 1781239200635
+      }
+    }
+  },
+  "meta": null,
+  "pinData": {},
+  "versionId": "d0223eb3-4f63-4205-90cb-a5f56b442361",
+  "versionCounter": 276,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-30T05:31:29.607Z",
+      "createdAt": "2026-03-30T05:31:29.607Z",
+      "role": "workflow:owner",
+      "workflowId": "FqbL3EMXvA1xxZDJ",
+      "projectId": "wKfdBpMS0JmOoV5j",
+      "project": {
+        "updatedAt": "2025-11-16T22:10:59.419Z",
+        "createdAt": "2025-11-16T22:06:13.609Z",
+        "id": "wKfdBpMS0JmOoV5j",
+        "name": "Gadget Man <your.email@example.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-11-16T22:06:13.610Z",
+            "createdAt": "2025-11-16T22:06:13.610Z",
+            "userId": "c7ebb70a-2b7c-4092-ab61-54402a19a5fe",
+            "projectId": "wKfdBpMS0JmOoV5j",
+            "user": {
+              "updatedAt": "2026-06-12T04:12:22.000Z",
+              "createdAt": "2025-11-16T22:06:12.457Z",
+              "id": "c7ebb70a-2b7c-4092-ab61-54402a19a5fe",
+              "email": "your.email@example.com",
+              "firstName": "Gadget",
+              "lastName": "Man",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-11-16T22:11:18.519Z",
+                "personalization_survey_n8n_version": "1.119.2",
+                "companyType": "personal",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "firstSuccessfulWorkflowId": "pNZcjNdl4m4fAflb",
+                "userActivatedAt": 1764586854414,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1774392316845
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-06-11",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": []
+}
