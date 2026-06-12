@@ -484,7 +484,7 @@
           "parameters": [
             {
               "name": "x-goog-api-key",
-              "value": "AIzaSyDv5W0gQ1D2stiw4judItwdSGWYypE2_gU"
+              "value": "YOUR_GOOGLE_API_KEY"
             },
             {
               "name": "Content-Type",
