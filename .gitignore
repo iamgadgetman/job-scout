@@ -35,3 +35,9 @@ logs/
 # Personal configurations
 my-profile.js
 personal-config.json
+# Harness fixtures are fetched locally (fetch_fixtures.sh); never commit them
+src/ats_scout_src/fixtures/
+
+# Your filled-in copies
+*.local.yml
+workflows-local/

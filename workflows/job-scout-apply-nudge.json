@@ -1,0 +1,119 @@
+{
+  "name": "Job Scout - Apply Nudge",
+  "nodes": [
+    {
+      "id": "nudge_1",
+      "name": "Daily 5PM PT",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "nudge_2",
+      "name": "Query Notion New Jobs",
+      "position": [
+        300,
+        300
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const DBS = [\"YOUR_NOTION_DB_MAIN\", \"YOUR_NOTION_DB_CLOUD\", \"YOUR_NOTION_DB_SECURITY\"];\nconst TOKEN = \"YOUR_NOTION_TOKEN\";\nconst body = {\"filter\": {\"property\": \"Status\", \"select\": {\"equals\": \"New\"}}, \"sorts\": [{\"property\": \"Score\", \"direction\": \"descending\"}], \"page_size\": 20};\nlet all = [];\nfor (const db of DBS) {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `https://api.notion.com/v1/databases/${db}/query`,\n    headers: { 'Authorization': `Bearer ${TOKEN}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },\n    body, json: true\n  });\n  if (resp && Array.isArray(resp.results)) all = all.concat(resp.results);\n}\nall.sort((a,b) => ((b.properties && b.properties.Score && b.properties.Score.number) || 0) - ((a.properties && a.properties.Score && a.properties.Score.number) || 0));\nreturn [{ json: { results: all } }];"
+      }
+    },
+    {
+      "id": "nudge_3",
+      "name": "Format Nudge Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst resp = $input.first().json;\nconst results = resp.results || [];\n\nif (results.length === 0) {\n  return [{ json: {\n    content: '✅ **Job Scout — All caught up!** No unreviewed jobs in Notion. Check back after tomorrow morning\\'s run.',\n    username: 'Job Scout'\n  }}];\n}\n\nconst notionUrl = 'https://www.notion.so/YOUR_NOTION_DB_URL';\nconst top = results.slice(0, 5);\n\nlet msg = `📬 **Job Scout — Evening Check-In**\\n`;\nmsg += `You have **${results.length} unreviewed job${results.length !== 1 ? 's' : ''}** waiting in Notion.\\n\\n`;\n\nfor (const p of top) {\n  const props = p.properties || {};\n  const title = props['Job Title']?.title?.[0]?.text?.content || 'Unknown';\n  const company = props['Company']?.rich_text?.[0]?.text?.content || '';\n  const score = props['Score']?.number ?? '?';\n  const priority = props['Priority']?.select?.name || '';\n  const applyUrl = props['Apply URL']?.url || '';\n  const pageUrl = p.url || '';\n\n  const priBadge = priority === 'High' ? '🔥' : priority === 'Medium' ? '⭐' : '•';\n  msg += `${priBadge} **${score}** — **${title}** @ ${company}\\n`;\n  if (applyUrl) msg += `   Apply: ${applyUrl}\\n`;\n}\n\nmsg += `\\n[📋 Open all in Notion](${notionUrl})`;\nmsg += `\\n\\n*Update Status to \"Applied\" in Notion when you apply — you got this!*`;\n\nreturn [{ json: { content: msg, username: 'Job Scout' } }];\n"
+      }
+    },
+    {
+      "id": "nudge_4",
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.content }}"
+            },
+            {
+              "name": "username",
+              "value": "Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Daily 5PM PT": {
+      "main": [
+        [
+          {
+            "node": "Query Notion New Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Notion New Jobs": {
+      "main": [
+        [
+          {
+            "node": "Format Nudge Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Nudge Message": {
+      "main": [
+        [
+          {
+            "node": "Post to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,635 @@
+{
+  "name": "Job Search - ATS Scout",
+  "nodes": [
+    {
+      "name": "Daily 8AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        160
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 15 * * *"
+            }
+          ]
+        }
+      },
+      "id": "c99ccd42-05ce-41f5-94c0-37d25cc10a0a"
+    },
+    {
+      "name": "On Demand",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        380
+      ],
+      "parameters": {
+        "path": "ats-scout",
+        "options": {}
+      },
+      "id": "97e10b41-c19a-4d3d-a0d7-d8ebad80a88a"
+    },
+    {
+      "name": "List Notion Boards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        230,
+        270
+      ],
+      "parameters": {
+        "jsCode": "// The three Notion databases Prepare Notion Body routes into. Listing them as\n// items fans the next node out into one query per board.\n// Kept in sync with routeDb() in prepare_notion_body.js.\nreturn [\n  { json: { db: 'YOUR_NOTION_DB_MAIN', label: 'Jobs (default)' } },\n  { json: { db: 'YOUR_NOTION_DB_SECURITY', label: 'Network Security' } },\n  { json: { db: 'YOUR_NOTION_DB_CLOUD', label: 'Cloud Networking' } },\n];\n"
+      },
+      "id": "77e0751e-f867-4bfd-a480-bf7a5e641dbe"
+    },
+    {
+      "name": "Fetch Acted-On Roles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        270
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $json.db }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ page_size: 100, filter: { property: \"Status\", select: { does_not_equal: \"New\" } } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "f5daafc8-bc77-4de5-956f-304732702727"
+    },
+    {
+      "name": "Build Target List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        670,
+        270
+      ],
+      "parameters": {
+        "jsCode": "// ── Single source of truth for which boards get polled ────────────────────\n// Adding a company is ONE line here; nothing else in the workflow changes.\n// Derived from career/job-search/scout-targets.yaml.yml. Every token below was\n// verified 2026-09-10 by fetching the endpoint and counting returned postings.\n//\n// NOT wired:\n//   DigitalOcean - still unresolved as of 2026-09-10. 404 on Greenhouse\n//                  (digitalocean, digitaloceanholdings, digitalocean1,\n//                  docareers), Lever and Ashby; 21 Workday tenant/site\n//                  combinations tried; no board URL in the page HTML, its JS\n//                  bundles, or the careers sitemap. The open-roles page renders\n//                  its list client-side (\"Loading roles...\").\n//                  RECOVERY, one minute by hand: open\n//                  digitalocean.com/careers/open-roles in a browser, click any\n//                  role, and read the domain of the URL it lands on. That\n//                  domain plus the first path segment is the token - add it\n//                  here and to scout-targets.yaml.yml.\nconst TARGETS = [\n  // Tier 1 - networking is the product, remote is the default\n  { name: 'Tailscale',                ats: 'greenhouse', token: 'tailscale',   priority: 1 },\n  { name: 'Grafana Labs',             ats: 'greenhouse', token: 'grafanalabs', priority: 1 },\n  { name: 'Cloudflare',               ats: 'greenhouse', token: 'cloudflare',  priority: 1 },\n  { name: 'HAProxy Technologies',     ats: 'html',       token: 'haproxy',     priority: 1 },\n  // Tier 2 - remote-friendly at scale\n  { name: 'Fastly',                   ats: 'greenhouse', token: 'fastly',      priority: 2 },\n  { name: 'GitLab',                   ats: 'greenhouse', token: 'gitlab',      priority: 2 },\n  { name: 'Datadog',                  ats: 'greenhouse', token: 'datadog',     priority: 2 },\n  { name: 'WorkOS',                   ats: 'ashby',      token: 'WorkOS',      priority: 2 },\n  { name: 'Vantage Point Solutions',  ats: 'breezy',     token: 'vantage-point-solutions-inc', priority: 2 },\n  // Added 2026-10-01 - each had a remote-US network role open on the day it\n  // was probed (Coinbase Sr Network Engineer, NetBrain Sr Network Automation\n  // Engineer, Vultr Network Operations Engineer, Cerebras Network Security\n  // Engineer, Aviatrix Sr/Staff Cloud Network Engineer).\n  { name: 'Coinbase',                 ats: 'greenhouse', token: 'coinbase',    priority: 2 },\n  { name: 'NetBrain',                 ats: 'greenhouse', token: 'netbrain',    priority: 1 },\n  { name: 'Vultr',                    ats: 'ashby',      token: 'vultr',       priority: 1 },\n  { name: 'Cerebras',                 ats: 'ashby',      token: 'cerebras',    priority: 2 },\n  { name: 'Aviatrix',                 ats: 'greenhouse', token: 'aviatrix',    priority: 1 },\n  // Added 2026-10-11 - probed live; each had a US or remote-flagged network\n  // role open that day (Meter Network Engineer, Lambda Sr Network Engineer,\n  // Fluidstack Network Engineer x3, Snowflake Staff Network Engineer, Nebius\n  // Sr Network Engineer US, OpenAI Network Engineer, GuidePoint Sr Security\n  // Engineer (Firewall) Remote). CoreWeave posts network roles often.\n  // Arista/Juniper/Palo Alto/Fortinet/Akamai are Workday-only - not pollable.\n  // Lambda, Fluidstack, OpenAI removed same day: Ashby flags their network\n  // roles remote but every one is 4 days/week onsite SF/NY (scored 15-45).\n  { name: 'Meter',                    ats: 'ashby',      token: 'meter',       priority: 1 },\n  { name: 'Nebius',                   ats: 'greenhouse', token: 'nebius',      priority: 2 },\n  { name: 'Snowflake',                ats: 'ashby',      token: 'snowflake',   priority: 2 },\n  { name: 'GuidePoint Security',      ats: 'greenhouse', token: 'guidepointsecurity', priority: 2 },\n  { name: 'CoreWeave',                ats: 'greenhouse', token: 'coreweave',   priority: 2 },\n  // Tier 3\n  { name: 'Equinix',                  ats: 'sitemap',    token: 'equinix',     priority: 2 },\n  { name: 'Elastic',                  ats: 'greenhouse', token: 'elastic',     priority: 3 },\n  { name: 'Wealthfront',              ats: 'lever',      token: 'wealthfront', priority: 3 },\n];\n\n// ── Roles already been through, compiled from scout-targets.yaml.yml ──────\n// build_ats_scout.py replaces the marker below at deploy time from the\n// `applied:` blocks in that file. Edit the YAML, not this line.\n// Entries are { company, role|null, reopen_after: 'YYYY-MM', outcome }.\n// A null role suppresses the whole employer. Suppression is time-boxed - the\n// role returns on its own once reopen_after passes.\nconst SUPPRESSIONS = [];\n\nconst ENDPOINTS = {\n  greenhouse: t => `https://boards-api.greenhouse.io/v1/boards/${t}/jobs?content=true`,\n  lever:      t => `https://api.lever.co/v0/postings/${t}?mode=json`,\n  ashby:      t => `https://api.ashbyhq.com/posting-api/job-board/${t}?includeCompensation=true`,\n  breezy:     t => `https://${t}.breezy.hr/json`,\n  // HAProxy publishes no board API - the careers index is plain HTML with one\n  // link per open role. Brittle by nature; a layout change degrades this target\n  // to zero jobs rather than failing the run, and shows up in source health.\n  // Its per-role pages DO carry a JSON-LD JobPosting, so the detail pass picks\n  // up real descriptions.\n  html:       () => 'https://www.haproxy.com/company/careers',\n  // Equinix's careers site is client-rendered with no board API, but its\n  // sitemap lists every job URL and each job page carries a JSON-LD\n  // JobPosting. Index here, filter by slug, then fetch only the matches.\n  sitemap:    () => 'https://careers.equinix.com/sitemap.xml',\n};\n\n// Record what we expect back, so Normalize can report boards that went silent.\nconst sd = $getWorkflowStaticData('global');\nsd.expectedTargets = TARGETS.map(t => t.name);\n\n// Suppressions ride along on each item so Normalize can read them back from\n// this node - same pattern as the priority lookup, one source of truth.\nreturn TARGETS.map(t => ({\n  json: { ...t, url: ENDPOINTS[t.ats](t.token), suppressions: SUPPRESSIONS },\n}));\n"
+      },
+      "id": "45bc1f8a-de95-4e79-923f-076faa09d2e9"
+    },
+    {
+      "name": "Fetch ATS Board",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        890,
+        270
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; job-scout/1.0)"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/html;q=0.9"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "8a25edd5-3f06-4c40-ad14-6d07453d008d"
+    },
+    {
+      "name": "Extract Detail URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1110,
+        270
+      ],
+      "parameters": {
+        "jsCode": "// ── Detail pass, stage 1 ─────────────────────────────────────────────────\n// Two boards publish job pages that are richer than their feed, and both serve a\n// JSON-LD JobPosting:\n//   HAProxy - publishes no machine-readable board at all; the careers index is\n//             plain HTML, so titles come from there and everything else from the\n//             per-role page.\n//   Breezy  - its feed carries no description AND an empty salary field. Vantage\n//             Point's Network Engineer posts \"$85,000 to $100,000\" on the page and\n//             nothing at all in the feed, so it sailed past the salary floor as\n//             \"unknown\". Fetching the page is the only way to see the number.\n//\n// Equinix is deliberately NOT fetched here. Its job pages carry the same\n// JSON-LD, but careers.equinix.com answers a burst of requests from the n8n VPS\n// with a 2.4 KB JavaScript challenge stub instead of the page (verified in\n// execution 57246: the first run succeeded, the next returned stubs for all\n// seven). Rather than hammer a host that is asking us not to, Equinix is read\n// from its sitemap in Normalize - the slug carries the title and the country,\n// which is enough to filter on, and it costs zero extra requests.\n//\n// n8n Code nodes cannot make HTTP calls, which is why this is split across two\n// nodes rather than done inline. Normalize ATS reads the board payloads back\n// out of $('Fetch ATS Board'), so all the parsing and filtering still lives in\n// exactly one place.\n\n// Cheap pre-filter on the URL slug. Deliberately looser than the title filter\n// in Normalize - this only decides what is worth one HTTP request.\nconst SLUG_HINTS = [\n  'network-engineer', 'network-reliability', 'cloud-network', 'network-security',\n  'network-architect', 'network-operations', 'network-automation',\n  'infrastructure-engineer', 'platform-engineer',\n  'systems-engineer', 'firewall-engineer',\n];\nconst SLUG_BLOCK = [\n  'software-engineer', 'sales', 'account-executive', 'recruiter', 'intern',\n  'technician', 'manutentore', 'customer-success', 'marketing', 'counsel',\n];\n// Cap the fan-out so one target cannot dominate the run's HTTP budget.\nconst MAX_PER_TARGET = 12;\n\nconst out = [];\nconst seen = new Set();\n\nfor (const item of $input.all()) {\n  const d = item.json;\n  if (!d) continue;\n  if (typeof d.data !== 'string') {\n    // Breezy postings arrive as individual JSON items, not an HTML blob.\n    if (d.friendly_id && typeof d.url === 'string' && /breezy\\.hr/i.test(d.url)) {\n      const slug = (d.url.split('/p/')[1] || '').toLowerCase();\n      if (slug && !seen.has(d.url)\n          && !SLUG_BLOCK.some(k => slug.includes(k))\n          && SLUG_HINTS.some(k => slug.includes(k))) {\n        seen.add(d.url);\n        // NB: Breezy's `company` field is an object, not a string - the\n        // employer is derived from the URL token in Normalize instead.\n        out.push({ json: { detail_url: d.url, slug, company: '',\n                           priority: null, ats_provider: 'Breezy', url: d.url } });\n      }\n    }\n    continue;\n  }\n  const body = d.data;\n\n  // ── HAProxy: careers index, one <a> per open role ──────────────────────\n  if (/haproxy/i.test(body) && /\\/company\\/careers\\//.test(body)) {\n    const re = /href=\"(\\/company\\/careers\\/([a-z0-9-]+))\"/gi;\n    let m, n = 0;\n    while ((m = re.exec(body)) !== null && n < MAX_PER_TARGET) {\n      const slug = m[2];\n      const url = 'https://www.haproxy.com/company/careers/' + slug;\n      if (seen.has(url)) continue;\n      // Same slug filter as Equinix: no point spending a request on a Golang\n      // or QA role that the title filter will drop a moment later.\n      if (SLUG_BLOCK.some(k => slug.includes(k))) continue;\n      if (!SLUG_HINTS.some(k => slug.includes(k))) continue;\n      seen.add(url); n++;\n      out.push({ json: { detail_url: url, slug, company: 'HAProxy Technologies',\n                         priority: 1, ats_provider: 'Careers Page', url } });\n    }\n  }\n\n}\n\n// An n8n node with zero input items does not execute, which would stall the\n// rest of the chain on any day where no detail page needs fetching. Emit one\n// harmless keep-alive request instead; Normalize discards it by its noop flag.\nif (!out.length) {\n  return [{ json: { noop: true, url: 'https://www.haproxy.com/robots.txt' } }];\n}\nreturn out;\n"
+      },
+      "id": "4d6dab13-d9d6-4924-bd0f-252dfb86ca78"
+    },
+    {
+      "name": "Fetch Job Detail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1330,
+        270
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; job-scout/1.0)"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "911e379d-b510-4fe0-afe3-affee7671269"
+    },
+    {
+      "name": "Normalize ATS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1550,
+        270
+      ],
+      "parameters": {
+        "jsCode": "// ── Normalize + Filter + Dedup, ATS edition ──────────────────────────────\n// Inputs, from two places:\n//   $('Fetch ATS Board')  - raw board payloads. One item per board for the\n//                           object APIs (Greenhouse/Ashby), one item per\n//                           posting for the array APIs (Lever/Breezy), because\n//                           n8n splits a top-level JSON array into items.\n//   $input                - job DETAIL pages for the two targets that publish\n//                           no board (HAProxy, Equinix). Each carries a JSON-LD\n//                           JobPosting. See extract_detail_urls.js.\n// Keeping both here means every filter still lives in exactly one place.\n// Output: a single item { jobs, count } capped per scout-targets.yaml.yml.\n\nconst items = $('Fetch ATS Board').all();\nconst detailPages = $input.all();\n\n// Priority lives in exactly one place - Build Target List. Read it back rather\n// than duplicating the table here, so adding a company stays a one-line edit.\nconst byToken = {};\nconst byName = {};\nfor (const t of $('Build Target List').all()) {\n  byToken[String(t.json.token).toLowerCase()] = t.json;\n  byName[String(t.json.name).toLowerCase()] = t.json;\n}\n\nfunction tokenFromUrl(url) {\n  const u = String(url || '');\n  let m;\n  if ((m = u.match(/greenhouse\\.io\\/([^\\/?#]+)\\//i)))  return m[1];\n  if ((m = u.match(/lever\\.co\\/([^\\/?#]+)\\//i)))       return m[1];\n  if ((m = u.match(/ashbyhq\\.com\\/([^\\/?#]+)\\//i)))    return m[1];\n  if ((m = u.match(/https?:\\/\\/([^.\\/]+)\\.breezy\\.hr/i))) return m[1];\n  if (/haproxy\\.com/i.test(u)) return 'haproxy';\n  return '';\n}\n// Not every board serves its jobs from the ATS domain - Elastic fronts\n// Greenhouse at jobs.elastic.co, so the URL carries no recognisable token. Fall\n// back to matching the employer name before giving up, or the role lands at\n// priority 9 and sorts below everything.\nfunction targetFor(url, fallbackName) {\n  const viaToken = byToken[tokenFromUrl(url).toLowerCase()];\n  if (viaToken) return viaToken;\n  const viaName = byName[String(fallbackName || '').toLowerCase().trim()];\n  if (viaName) return viaName;\n  return { name: fallbackName || 'Unknown', priority: 9 };\n}\n\n// Greenhouse ships HTML that has been entity-escaped once, so: decode, strip\n// tags, then decode again to catch entities that were double-escaped (&amp;nbsp;).\nconst decode = s => String(s || '')\n  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n  .replace(/&#0?39;/g, \"'\").replace(/&apos;/g, \"'\")\n  .replace(/&nbsp;/g, ' ')\n  // Pay ranges are routinely written \"$218,420 &mdash; $273,360\", so a dash\n  // entity left undecoded means the range silently fails to parse.\n  .replace(/&[mn]dash;/g, '-').replace(/&#82(11|12);/g, '-')\n  .replace(/&[lr]squo;/g, \"'\").replace(/&[lr]dquo;/g, '\"')\n  .replace(/&hellip;/g, '...')\n  .replace(/&#(\\d{2,5});/g, (_, n) => String.fromCharCode(Number(n)))\n  .replace(/&amp;/g, '&');\nconst clean = s => decode(decode(String(s || '')).replace(/<[^>]*>/g, ' '))\n  .replace(/\\s+/g, ' ').trim();\n\n// Pull a salary range out of free text. Boards rarely use a structured field.\n// Look in a window around compensation wording first: the first dollar figure\n// in a job description is often a signing bonus or a company revenue stat, and\n// treating that as base pay would drop good roles at the salary floor.\nconst PAY_NEAR = /(salary|compensation|base pay|pay range|annual|on-target|ote|\\bcash\\b)[\\s\\S]{0,240}/gi;\nfunction parseSalary(text) {\n  const full = String(text || '');\n  const windows = full.match(PAY_NEAR);\n  if (windows) {\n    // Employers that hire in several countries print one range per currency\n    // (Tailscale posts a CAN range above the US one). Prefer the USD range\n    // rather than whichever happens to appear first.\n    const hits = windows.map(matchSalary).filter(h => h[0]);\n    const best = hits.find(h => h[2] === 'USD') || hits[0];\n    if (best) return [best[0], best[1], best[2], true];   // true = comp context\n  }\n  const loose = matchSalary(full);\n  return [loose[0], loose[1], loose[2], false];\n}\n// Returns [min, max, currency]. Boards post ranges in local currency without\n// always saying so up front, and comparing a CAD range against a USD floor\n// would quietly admit roles that are actually under it.\nfunction currencyOf(text) {\n  const m = String(text || '').match(/\\b(CAD|GBP|EUR|AUD|USD)\\b/);\n  return m ? m[1] : 'USD';\n}\nfunction matchSalary(text) {\n  const t = String(text || '');\n  let m;\n  if ((m = t.match(/\\$\\s?(\\d{2,3})\\s?[kK]\\s*(?:[-–—]|to)\\s*\\$?\\s?(\\d{2,3})\\s?[kK]/)))\n    return [Number(m[1]) * 1000, Number(m[2]) * 1000, currencyOf(m[0] + t.slice(t.indexOf(m[0]) + m[0].length, t.indexOf(m[0]) + m[0].length + 12))];\n  if ((m = t.match(/\\$\\s?(\\d{2,3},\\d{3})\\s*(?:[-–—]|to)\\s*\\$?\\s?(\\d{2,3},\\d{3})/)))\n    return [Number(m[1].replace(/,/g, '')), Number(m[2].replace(/,/g, '')), currencyOf(t.slice(t.indexOf(m[0]), t.indexOf(m[0]) + m[0].length + 12))];\n  if ((m = t.match(/\\$\\s?(\\d{2,3})\\s?[kK]\\b/)))       return [Number(m[1]) * 1000, null, currencyOf(t)];\n  if ((m = t.match(/\\$\\s?(\\d{2,3},\\d{3})\\b/)))        return [Number(m[1].replace(/,/g, '')), null, currencyOf(t)];\n  return [null, null, 'USD'];\n}\n\nconst stats = { ok: {}, bad: [], seen: {} };\nlet allJobs = [];\nconst detailUrls = new Set(\n  $('Extract Detail URLs').all().map(x => String((x.json || {}).detail_url || '')));\n\nfor (const item of items) {\n  const d = item.json;\n  if (!d || typeof d !== 'object') continue;\n\n  // ── Greenhouse: { jobs: [ { absolute_url, content, ... } ] } ───────────\n  if (Array.isArray(d.jobs) && d.jobs.length && d.jobs[0].absolute_url) {\n    for (const j of d.jobs) {\n      const tgt = targetFor(j.absolute_url, j.company_name);\n      const desc = clean(j.content);\n      const [smin, smax, scur, sconf] = parseSalary(desc);\n      // Greenhouse posts one role per office but lists every office it is open\n      // in. Display the US option when there is one, so a role open in the US\n      // is not labelled \"Remote (United Kingdom)\" in the digest.\n      const offices = (j.offices || []).map(o => String(o.name || '').trim());\n      const primaryLoc = (j.location && j.location.name) || '';\n      const usOffice = offices.find(o => /united states|\\bu\\.?s\\.?a?\\b/i.test(o));\n      allJobs.push({\n        job_id: 'gh_' + j.id,\n        title: j.title || '',\n        company: tgt.name,\n        location: (usOffice && !/united states|\\bu\\.?s\\.?a?\\b/i.test(primaryLoc))\n                  ? usOffice : primaryLoc,\n        alt_locations: offices.join(', '),\n        is_remote: /remote|distributed|anywhere/i.test((j.location && j.location.name) || ''),\n        apply_url: j.absolute_url || '',\n        description: desc.substring(0, 3000),\n        salary_min: smin, salary_max: smax, salary_currency: scur, salary_confident: sconf, salary_text: scur === 'USD' ? '' : `${scur} range`,\n        posted_date: (j.first_published || j.updated_at || '').split('T')[0],\n        priority: tgt.priority,\n        source: tgt.name,\n        ats_provider: 'Greenhouse',\n      });\n    }\n  }\n\n  // ── Ashby: { jobs: [ { jobUrl, descriptionPlain, ... } ] } ─────────────\n  else if (Array.isArray(d.jobs) && d.jobs.length && d.jobs[0].jobUrl) {\n    for (const j of d.jobs) {\n      if (j.isListed === false) continue;\n      const tgt = targetFor(j.jobUrl, j.department);\n      const comp = (j.compensation && (\n        j.compensation.scrapeableCompensationSalarySummary ||\n        j.compensation.compensationTierSummary)) || '';\n      const desc = String(j.descriptionPlain || '');\n      const [smin, smax, scur, sconf] = parseSalary(comp || desc);\n      allJobs.push({\n        job_id: 'ashby_' + j.id,\n        title: j.title || '',\n        company: tgt.name,\n        location: j.location || '',\n        alt_locations: (j.secondaryLocations || []).map(s => s.location || s).join(', '),\n        is_remote: j.isRemote === true || /remote/i.test(String(j.workplaceType || '')),\n        apply_url: j.applyUrl || j.jobUrl || '',\n        description: desc.substring(0, 3000),\n        salary_min: smin, salary_max: smax, salary_currency: scur, salary_confident: sconf, salary_text: comp,\n        posted_date: String(j.publishedAt || '').split('T')[0],\n        priority: tgt.priority,\n        source: tgt.name,\n        ats_provider: 'Ashby',\n      });\n    }\n  }\n\n  // ── Lever: one posting per item (n8n split the top-level array) ────────\n  else if (d.hostedUrl && d.text) {\n    const tgt = targetFor(d.hostedUrl);\n    const cats = d.categories || {};\n    const desc = String(d.descriptionPlain || '') + ' ' + String(d.additionalPlain || '');\n    const [smin, smax, scur, sconf] = parseSalary(desc);\n    allJobs.push({\n      job_id: 'lever_' + d.id,\n      title: d.text || '',\n      company: tgt.name,\n      location: cats.location || '',\n      alt_locations: (cats.allLocations || []).join(', '),\n      is_remote: String(d.workplaceType || '').toLowerCase() === 'remote',\n      apply_url: d.applyUrl || d.hostedUrl || '',\n      description: desc.replace(/\\s+/g, ' ').trim().substring(0, 3000),\n      salary_min: smin, salary_max: smax, salary_currency: scur, salary_confident: sconf, salary_text: scur === 'USD' ? '' : `${scur} range`,\n      posted_date: d.createdAt ? new Date(d.createdAt).toISOString().split('T')[0] : '',\n      priority: tgt.priority,\n      // Lever exposes workplaceType, so an 'onsite'/'hybrid' posting is known\n      // for certain rather than inferred from prose.\n      workplace_type: String(d.workplaceType || '').toLowerCase(),\n      source: tgt.name,\n      ats_provider: 'Lever',\n    });\n  }\n\n  // ── Breezy: one posting per item. The feed carries NO description. ─────\n  // Anything the detail pass is fetching is skipped here - otherwise the\n  // description-less feed version would win dedup over the real page.\n  else if (d.friendly_id && d.url && /breezy\\.hr/i.test(String(d.url))\n           && !detailUrls.has(String(d.url))) {\n    const tgt = targetFor(d.url);\n    const loc = d.location || {};\n    allJobs.push({\n      job_id: 'breezy_' + d.id,\n      title: d.name || '',\n      company: tgt.name,\n      // loc.name is the HQ street address' city. When Breezy flags the role\n      // remote, showing \"Mitchell, SD\" would read as a dealbreaker it is not.\n      location: loc.is_remote === true\n        ? 'Remote' + (loc.name ? ' (HQ ' + loc.name + ')' : '')\n        : (loc.name || ''),\n      alt_locations: ((loc.remote_details && loc.remote_details.label) || '') + ' '\n                   + (d.locations || []).map(l => l.name).join(', '),\n      is_remote: loc.is_remote === true,\n      apply_url: d.url || '',\n      // Breezy's list endpoint omits the body; the title filter still applies\n      // and the scorer is told plainly that it is judging on title alone.\n      description: '(Description is not published in this board feed - open the '\n                 + 'posting to read it. Score on title, company and location only.)',\n      salary_min: null, salary_max: null,\n      salary_text: typeof d.salary === 'string' ? d.salary : '',\n      posted_date: String(d.published_date || '').split('T')[0],\n      priority: tgt.priority,\n      source: tgt.name,\n      ats_provider: 'Breezy',\n    });\n  }\n\n  // ── Equinix: read straight from the sitemap, no per-job request ────────\n  // careers.equinix.com serves a JS challenge stub to bursts from the VPS, so\n  // the slug is all we get - and it is enough: it carries the title and the\n  // country, which is what the filters need. Descriptions are unavailable, and\n  // the scorer is told so and caps those roles.\n  else if (typeof d.data === 'string' && /<urlset/i.test(d.data)\n           && /careers\\.equinix\\.com/i.test(d.data)) {\n    const re = /<loc>\\s*(https:\\/\\/careers\\.equinix\\.com\\/jobs\\/([^<\\s]+))\\s*<\\/loc>/gi;\n    const tgt = byName['equinix'] || { name: 'Equinix', priority: 2 };\n    let m;\n    while ((m = re.exec(d.data)) !== null) {\n      const url = m[1];\n      // Strip the trailing UUID some slugs carry, then split the location off\n      // the tail. Imperfect by nature - there is no delimiter between title and\n      // location - so the title may keep a place name. Honest and readable\n      // beats clever and wrong here.\n      let slug = m[2].toLowerCase()\n        .replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, '');\n      const words = slug.split('-');\n      const PLACE = /^(united|states|america|remote|canada|singapore|india|japan|poland|philippines|germany|netherlands|ireland|spain|brazil|mexico|australia|china|korea|france|italy|sweden|turkey|dubai|emirates|kingdom|hong|kong|karnataka|masovian|warsaw|bengaluru|manila|tokyo|shinagawa|ku|national|capital|region|texas|california|virginia|york|new|dallas|ashburn|denver|seattle|atlanta|chicago|boston|frankfurt|amsterdam|london|paris|madrid|milan|osaka|sydney|toronto|ontario|quebec)$/;\n      let cut = words.length;\n      while (cut > 2 && PLACE.test(words[cut - 1])) cut--;\n      const title = words.slice(0, cut).join(' ').replace(/\\b\\w/g, c => c.toUpperCase());\n      const place = words.slice(cut).join(' ');\n      allJobs.push({\n        job_id: 'eqx_' + slug.substring(0, 60),\n        title,\n        company: tgt.name,\n        location: place || 'Not stated',\n        alt_locations: '',\n        is_remote: /remote/.test(slug),\n        apply_url: url,\n        slug: slug.replace(/-/g, ' '),\n        description: '(Equinix publishes no description in its feed and blocks '\n                   + 'automated page reads - open the posting to read it. Score '\n                   + 'on title, company and location only.)',\n        salary_min: null, salary_max: null, salary_currency: 'USD', salary_text: '',\n        posted_date: '',\n        priority: tgt.priority,\n        source: tgt.name,\n        ats_provider: 'Careers Page',\n      });\n    }\n  }\n\n  // ── Anything else is a failed fetch, not a board we know ───────────────\n  else if (d.error || d.message || d.status >= 400) {\n    stats.bad.push('fetch failed: ' + String(d.message || d.error || d.status).substring(0, 90));\n  }\n}\n\n// ── Detail pages: HAProxy and Equinix, read from JSON-LD ─────────────────\n// Both render their listings client-side but embed a schema.org JobPosting in\n// every job page, which is richer and far less brittle than scraping markup.\nfunction jsonLdJobPosting(html) {\n  const re = /<script[^>]*type=[\"']application\\/ld\\+json[\"'][^>]*>([\\s\\S]*?)<\\/script>/gi;\n  let m;\n  while ((m = re.exec(html)) !== null) {\n    let parsed;\n    try { parsed = JSON.parse(m[1].trim()); } catch (e) { continue; }\n    const candidates = Array.isArray(parsed) ? parsed\n      : (parsed['@graph'] ? parsed['@graph'] : [parsed]);\n    for (const c of candidates) {\n      if (c && c['@type'] === 'JobPosting') return c;\n    }\n  }\n  return null;\n}\nfunction flattenPlace(loc) {\n  const arr = Array.isArray(loc) ? loc : [loc];\n  return arr.filter(Boolean).map(p => {\n    const a = p.address || {};\n    return [a.addressLocality, a.addressRegion, a.addressCountry]\n      .filter(Boolean).join(', ');\n  }).filter(Boolean).join(' | ');\n}\n// schema.org gives the country as an ISO code (\"PL\", \"SG\"), which no list of\n// country NAMES will ever match. Read it structurally instead - Equinix posts\n// a Warsaw role as TELECOMMUTE with addressCountry \"PL\", and matching prose\n// let it through as a US remote role.\nfunction countryCodes(jp) {\n  const out = new Set();\n  const take = v => {\n    for (const p of (Array.isArray(v) ? v : [v])) {\n      if (!p) continue;\n      const c = (p.address && p.address.addressCountry) || p.name || p.addressCountry || p;\n      if (typeof c === 'string' && c.trim()) out.add(c.trim().toUpperCase());\n      else if (c && c.name) out.add(String(c.name).trim().toUpperCase());\n    }\n  };\n  take(jp.jobLocation);\n  // For a remote posting this is the field that says where it may be worked.\n  take(jp.applicantLocationRequirements);\n  return [...out];\n}\nconst US_CODES = ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'];\n\n// The HTTP node emits one item per input item, in order, so pair by INDEX.\n// Matching on slug text instead was actively wrong: HAProxy's slug is\n// \"network-engineer\", which appears inside Vantage Point's URL\n// \"5da388369be1-network-engineer\" - so Vantage Point's page was read as\n// HAProxy's role, and HAProxy's Tier-1 Network Engineer was rejected on\n// Vantage Point's $85-100k salary.\nconst detailMeta = $('Extract Detail URLs').all();\n\nfor (let i = 0; i < detailPages.length; i++) {\n  const d = detailPages[i].json;\n  if (!d || d.noop) continue;                 // keep-alive request, not a job\n  const html = typeof d.data === 'string' ? d.data : '';\n  if (!html) continue;\n\n  const meta = (detailMeta[i] || {}).json || {};\n  // Index pairing is correct by construction; verify it anyway, because a\n  // silent mis-pairing attributes one employer's salary to another.\n  if (meta.detail_url && !html.includes(String(meta.slug || ''))) {\n    stats.bad.push(`detail page ${i} did not match ${meta.company || 'its target'} - skipped`);\n    continue;\n  }\n\n  const jp = jsonLdJobPosting(html);\n  if (!jp) {\n    stats.bad.push(`${meta.company || 'detail page'}: no JSON-LD JobPosting (layout changed?)`);\n    continue;\n  }\n  // Derive the employer from the URL, exactly as the board handlers do. Breezy\n  // feed items carry `company` as an OBJECT, so trusting that field put\n  // \"[object Object]\" in the source stats.\n  const viaUrl = targetFor(meta.detail_url || jp.url || '', '');\n  const company = (viaUrl.priority !== 9 && viaUrl.name)\n    || (typeof meta.company === 'string' && meta.company)\n    || (jp.hiringOrganization && jp.hiringOrganization.name)\n    || 'Unknown';\n  const tgtByName = byName[String(company).toLowerCase()] || viaUrl || {};\n  const desc = clean(jp.description);\n  const remoteFlag = String(jp.jobLocationType || '') === 'TELECOMMUTE';\n  const placeText = flattenPlace(jp.jobLocation);\n  const [smin, smax, scur, sconf] = parseSalary(\n    (jp.baseSalary && JSON.stringify(jp.baseSalary)) || desc);\n\n  const codes = countryCodes(jp);\n  allJobs.push({\n    job_id: 'ld_' + String(jp.identifier && (jp.identifier.value || jp.identifier)\n                           || meta.slug || jp.title).substring(0, 60),\n    country_codes: codes,\n    // The URL slug spells out the location on both of these boards\n    // (\"...-warsaw-poland-...\"), so keep it as a second signal.\n    slug: meta.slug || '',\n    title: jp.title || '',\n    company: tgtByName.name || company,\n    location: remoteFlag ? 'Remote' : (placeText || 'Not stated'),\n    alt_locations: placeText,\n    is_remote: remoteFlag,\n    apply_url: meta.detail_url || jp.url || '',\n    description: desc.substring(0, 3000),\n    salary_min: smin, salary_max: smax, salary_currency: scur, salary_confident: sconf,\n    salary_text: scur === 'USD' ? '' : `${scur} range`,\n    posted_date: String(jp.datePosted || '').split('T')[0],\n    priority: meta.priority || tgtByName.priority || 2,\n    source: tgtByName.name || company,\n    ats_provider: meta.ats_provider || 'Careers Page',\n  });\n}\n\nfor (const j of allJobs) stats.seen[j.source] = (stats.seen[j.source] || 0) + 1;\nfor (const name of ($getWorkflowStaticData('global').expectedTargets || [])) {\n  if (!stats.seen[name]) stats.bad.push(name + ': returned no postings');\n}\n\n// ══ Filters ══════════════════════════════════════════════════════════════\nconst lc = s => String(s || '').toLowerCase();\n\n// ── Title must name one of the roles this lane is actually hiring for ─────\nconst TITLES = [\n  'network engineer', 'network reliability engineer', 'cloud network engineer',\n  'infrastructure engineer', 'platform engineer',\n  'systems engineer', 'network automation engineer',\n  'network security engineer', 'network architect', 'firewall engineer',\n  'infrastructure security engineer', 'network operations',\n];\nconst DEV_TITLES = [\n  'software engineer', 'software developer', 'web developer', 'frontend',\n  'front-end', 'back-end', 'backend', 'full stack', 'fullstack', 'full-stack',\n  'mobile developer', 'ios developer', 'android developer', 'data engineer',\n  'data scientist', 'ml engineer', 'machine learning engineer',\n  'application developer', 'solutions engineer', 'sales engineer',\n  'support engineer', 'forward deployed', 'security engineer, product',\n];\n// seniority_exclude from the YAML. seniority_include is deliberately NOT a\n// gate - plenty of good postings carry no level word at all, and gating on it\n// would silently drop them. Seniority is left to the scorer.\nconst SEN_EXCL = ['intern', 'junior', 'entry level', 'entry-level', 'apprentice',\n                  'graduate', 'associate'];\n\nallJobs = allJobs.filter(j => {\n  const t = lc(j.title);\n  if (DEV_TITLES.some(k => t.includes(k))) return false;\n  // SRE / DevOps are out of scope (2026-10-01) - he does not qualify. Production\n  // Engineer is the same job under Meta's name. \"Network Reliability Engineer\"\n  // is network work and stays.\n  if (/\\bsre\\b|site reliability|production engineer|\\bdevops\\b|\\bdev ops\\b/.test(t)) return false;\n  if (t.includes('reliability') && !t.includes('network reliability')) return false;\n  if (SEN_EXCL.some(k => t.includes(k))) return false;\n  if (/\\bjr\\.?\\b/.test(t)) return false;\n  if (/\\b(i|ii)\\b\\s*$/.test(t)) return false;        // \"Network Engineer II\"\n  return TITLES.some(k => t.includes(k));\n});\n\n// ── Location: remote-US, or hybrid/onsite in the allowed WA metros ───────\n// Remote-Only City is REMOTE ONLY since 2026-10-04: a remote Remote-Only City role passes as\n// remote below, an onsite/hybrid one is rejected like any other city.\nconst WA_OK = ['your city', 'nearby city a', 'nearby city b', 'nearby city c', 'metro area',\n               'metro area'];\nconst NON_US = ['canada', 'united kingdom', 'ireland', 'germany', 'france',\n                'netherlands', 'poland', 'spain', 'portugal', 'india',\n                'singapore', 'australia', 'japan', 'brazil', 'mexico',\n                'emea', 'apac', 'latam'];\nconst US_HINT = ['united states', 'usa', 'u.s.', ' us ', '(us', 'us)', 'us-',\n                 'americas', 'north america', 'remote us', 'anywhere in the us'];\nconst ONSITE_WORDS = ['hybrid', 'days per week onsite', 'days a week in office',\n                      'days in office', 'days onsite', 'relocation required',\n                      'in-office', 'on-site', 'onsite'];\n\nallJobs = allJobs.filter(j => {\n  // TWO haystacks, deliberately. Work arrangement is read from the location\n  // fields ALONE: \"Distributed Systems Engineer\" is a job about distributed\n  // systems, not a distributed job, and folding the title in here let every\n  // Cloudflare Hybrid role through.\n  const loc  = lc(j.location + ' ' + j.alt_locations);\n  // Which COUNTRY a role is restricted to, though, is sometimes only in the\n  // title - HAProxy posts \"Systems Engineer EMEA\" as TELECOMMUTE with no\n  // jobLocation at all - so region matching gets the title, and the URL slug\n  // where the board encodes the location there.\n  const region = lc(j.title + ' ' + j.location + ' ' + j.alt_locations + ' '\n                    + String(j.slug || '').replace(/-/g, ' '));\n  const head = lc(j.description).substring(0, 800);   // where location terms live\n  const waHit = WA_OK.some(k => loc.includes(k) || head.includes(k));\n  if (waHit) { j.location_verdict = 'WA metro - allowed'; return true; }\n\n  // A board location that names a country or region but no city (\"United\n  // States\", \"Americas\") is a distributed listing, not an onsite one. Without\n  // this, remote-first employers who never write the word \"remote\" - Elastic\n  // among them - are filtered out entirely.\n  const REGION_ONLY = /^(united states|usa|u\\.s\\.a?\\.?|us|north america|americas|anywhere|global|worldwide)$/;\n  const primary = lc(j.location).trim();\n  const regionOnly = REGION_ONLY.test(primary);\n  const remote = j.is_remote || regionOnly\n              || /\\bremote\\b|distributed|work from anywhere/.test(loc);\n\n  // Hybrid/onsite outside the allowed WA metros is a hard dealbreaker - but\n  // ONLY when no remote option is on offer. Employers routinely post a single\n  // location field holding both (\"Hybrid or Remote\", \"Distributed; Hybrid\"),\n  // and rejecting on the word alone threw those away. Lever's workplaceType is\n  // a single authoritative value, so it is still trusted outright.\n  if (j.workplace_type === 'hybrid' || j.workplace_type === 'onsite') return false;\n  if (!remote && ONSITE_WORDS.some(k => loc.includes(k) || head.includes(k))) return false;\n\n  if (!remote) return false;                          // onsite somewhere else\n\n  // Remote, but is it remote in a country he can work in?\n  // Structured country codes win outright when the board publishes them.\n  const codes = j.country_codes || [];\n  if (codes.length) {\n    if (!codes.some(c => US_CODES.includes(c))) return false;\n  } else {\n    const hasNonUs = NON_US.some(k => region.includes(k));\n    const hasUs    = US_HINT.some(k => (region + ' ').includes(k)) || /\\bus\\b/.test(region);\n    if (hasNonUs && !hasUs) return false;\n  }\n\n  // \"must reside in <somewhere>\" is only a dealbreaker when <somewhere> is not\n  // a place he already is. A remote role that says \"must reside in Washington\"\n  // is a match, not a reject.\n  const m = lc(j.description).match(/must (?:reside|live|be located|be based) in ([^.;\\n]{0,80})/);\n  if (m && !/washington|\\bwa\\b|pacific|united states|u\\.s\\.|\\bus\\b|any state|anywhere/.test(m[1])) {\n    return false;\n  }\n  j.location_verdict = 'Remote (US)';\n  return true;\n});\n\nconst norm = s => lc(s).replace(/[^a-z0-9]+/g, ' ').trim();\nconst key  = j => `${norm(j.company)}::${norm(j.title)}`;\n\n// ── Hard dealbreakers: clearance, federal work, drug testing ──────────────\n// \"drug-free workplace\" is legal boilerplate and is NOT testing - excluded\n// from this list on purpose. Federal agencies and federal contractors are out\n// (2026-10-04); state/local government is fine. The federal phrases are narrow\n// on purpose - \"As a federal contractor...\" is EEO boilerplate at most large\n// private employers and must not trip this.\nconst REJECT_TEXT = [\n  'security clearance', 'secret clearance', 'top secret', 'ts/sci', 'polygraph',\n  'hspd-12', 'piv credential', 'public trust', 'must be a us citizen due to',\n  'drug screen', 'drug test', 'pre-employment drug',\n  'department of energy', 'doe contract', 'national laboratory',\n  'dod customer', 'support of the dod', 'support of dod', 'federal customer',\n  'federal government client', 'federal agency client', 'supporting federal agencies',\n];\nallJobs = allJobs.filter(j => {\n  const txt = lc(j.title + ' ' + j.description);\n  const hit = REJECT_TEXT.find(k => txt.includes(k));\n  if (hit) { stats.bad.push(`rejected \"${j.title}\" (${j.company}): ${hit}`); return false; }\n  return true;\n});\n\n// ── Salary floor. salary_unknown_action: keep - never auto-drop unlisted comp.\n// A posted range has to REACH $120k at the top (2026-10-04: back to $120k from the\n// 2026-10-01 $125k - ~$120k is the target, anywhere in the band). The bottom may sit below it -\n// $90-130k is fine, because the band is negotiable and the ceiling is what says\n// whether the target is reachable. A range topping out below $120k is not: the\n// Vantage Point Network Engineer posted $85-100k, and no amount of negotiating\n// gets that to $140k.\nconst RANGE_TOP_MIN = 120000;\n// And a single figure quoted in a compensation context has to clear the same\n// $120k. the candidate's rule (2026-10-04) is \"$120k somewhere in the band, min or max\";\n// a lone figure IS the band. Was a lower $100k bar until then.\nconst SINGLE_MIN = 120000;\n\nallJobs = allJobs.filter(j => {\n  if (j.salary_currency && j.salary_currency !== 'USD' && j.salary_min) {\n    // Keep it, but make the currency visible so the range is not read as USD.\n    j.salary_text = `${j.salary_currency} ${Math.round(j.salary_min/1000)}k-${Math.round(j.salary_max/1000)}k (not USD)`;\n    return true;\n  }\n  const k = n => '$' + Math.round(n / 1000) + 'k';\n  if (j.salary_min && j.salary_max) {\n    if (j.salary_max >= RANGE_TOP_MIN) return true;\n    stats.bad.push(`rejected \"${j.title}\" (${j.company}): `\n      + `${k(j.salary_min)}-${k(j.salary_max)} tops out below ${k(RANGE_TOP_MIN)}`);\n    return false;\n  }\n  // A lone number is only trusted when it sat next to compensation wording;\n  // the first dollar figure in a job ad is otherwise as likely to be a bonus.\n  if (j.salary_min && j.salary_confident && j.salary_min < SINGLE_MIN) {\n    stats.bad.push(`rejected \"${j.title}\" (${j.company}): `\n      + `${k(j.salary_min)} quoted, below the ${k(SINGLE_MIN)} minimum`);\n    return false;\n  }\n  return true;   // unlisted comp is never an auto-drop\n});\n\n// ── Title tier + skill overlap (2026-10-04) ─────────────────────────────\n// Same block as the Daily Scout's Normalize node and scorer_src/build_score_prompt.js\n// - change all three together. Network Engineer is the primary target,\n// Infrastructure Engineer secondary; overlap counts the candidate's own stack\n// (candidate_profile.md) and DevOps/SRE vocabulary counts against it.\n// Whole word, plural allowed: 'firewall' counts 'firewalls', 'java' skips JavaScript.\nconst kwHit = (txt, k) => new RegExp('(^|[^a-z0-9])' + k.replace(/[.*+?^${}()|[\\]\\\\/]/g, '\\\\$&') + '(e?s)?([^a-z0-9]|$)').test(txt);\nconst PRIMARY_T = /\\bnetwork\\b.*\\b(engineer|architect|administrator|analyst|specialist)\\b|\\bfirewall engineer|\\bwireless engineer|\\bnoc engineer/;\nconst SECONDARY_T = /\\binfrastructure\\b.*\\b(engineer|architect|administrator)\\b|\\binfrastructure operations|\\bsystems? (engineer|administrator)|\\bsysadmin|\\bvirtualization|\\bvmware|\\bserver (engineer|administrator)|\\bdata center engineer|\\bcloud engineer|\\bhybrid cloud/;\nconst SKILLS = {\n  network:  ['bgp','ospf','mpls','dmvpn','vlan','qos','spanning tree','stp','multicast',\n             'cisco','nexus','nx-os','ios-xe','juniper','junos','mist','aruba','meraki',\n             'sd-wan','sdwan','routing','switching','wireless','wlc','dns','dhcp','ipam',\n             'vpn','wan','lan','load balanc','f5'],\n  security: ['palo alto','fortinet','fortigate','checkpoint','check point','asa',\n             'firewall','intrusion prevention','ips','radius','zero trust','cloudflare',\n             'pci','802.1x','nac','ise','segmentation'],\n  systems:  ['vmware','vsphere','esxi','proxmox','hyper-v','virtualization','linux',\n             'red hat','rhel','centos','windows server','active directory','docker',\n             'kubernetes','k8s','container','backup','disaster recovery','azure','aws'],\n  observability: ['solarwinds','orion','prometheus','grafana','splunk','elastic','syslog',\n             'snmp','netflow','monitoring','loki','observability'],\n  automation: ['ansible','python','n8n','automation','scripting','api'],\n};\nconst DEVOPS_SIG = ['ci/cd','cicd','jenkins','github actions','gitlab ci','argocd','argo cd',\n  'helm','slo','error budget','sre','site reliability','devops','microservices','golang',\n  'rust','java','spring boot','software development','release engineering','build pipeline'];\nfor (const j of allJobs) {\n  const t = lc(j.title);\n  j.title_tier = PRIMARY_T.test(t) ? 'primary' : SECONDARY_T.test(t) ? 'secondary' : 'other';\n  // Same 3000-char window the Daily Scout sees, so the two scales match.\n  const txt = lc(j.title + ' ' + String(j.description || '').substring(0, 3000));\n  const by = {};\n  let hits = 0;\n  for (const [cl, kws] of Object.entries(SKILLS)) {\n    by[cl] = kws.filter(k => kwHit(txt, k)).length;\n    hits += by[cl];\n  }\n  const dev = DEVOPS_SIG.filter(k => kwHit(txt, k)).length;\n  j.skill_overlap = Math.max(0, Math.min(100, Math.round(hits * 100 / 12) - dev * 8));\n  j.skill_clusters = Object.entries(by).filter(([, n]) => n).sort((a, b) => b[1] - a[1])\n    .map(([cl, n]) => `${cl} ${n}`).join(', ') + (dev ? `; devops signals ${dev}` : '');\n}\n\n// ── Dedup ────────────────────────────────────────────────────────────────\nconst thisRun = new Set();\nallJobs = allJobs.filter(j => {\n  const k = key(j);\n  if (!k || k === '::' || thisRun.has(k)) return false;\n  thisRun.add(k);\n  return true;\n});\n\n// Roles already acted on in Notion - applied, rejected, interviewing - are\n// excluded permanently rather than for the dedup window. This is what makes\n// output.track_applied real: n8n cannot observe an application being sent, but\n// it can read the status he sets by hand, which is the same fact one step later.\nconst actedOn = new Set();\nlet appliedThisWeek = 0;\nconst weekAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;\nfor (const page of $('Fetch Acted-On Roles').all()) {\n  for (const r of (page.json.results || [])) {\n    const props = r.properties || {};\n    const title = ((props['Job Title'] || {}).title || [])\n      .map(t => t.plain_text || '').join('');\n    const comp = ((props['Company'] || {}).rich_text || [])\n      .map(t => t.plain_text || '').join('');\n    if (title && comp) actedOn.add(`${norm(comp)}::${norm(title)}`);\n    const status = ((props['Status'] || {}).select || {}).name || '';\n    if (status === 'Applied' && Date.parse(r.last_edited_time || 0) > weekAgoMs) {\n      appliedThisWeek++;\n    }\n  }\n}\n\nconst sd = $getWorkflowStaticData('global');\nif (!sd.seenAtsKeys) sd.seenAtsKeys = {};\n// 180 days, not 30. An ATS posting stays live for months, so a 30-day window\n// would resurface the same role three or four times before it is filled.\nconst cutoff = Date.now() - 180 * 24 * 60 * 60 * 1000;\nfor (const k of Object.keys(sd.seenAtsKeys)) {\n  if (sd.seenAtsKeys[k] < cutoff) delete sd.seenAtsKeys[k];\n}\n// ── Roles already been through, from scout-targets.yaml.yml ──────────────\n// The Notion exclusion above only sees roles that reached a Notion board. An\n// application made before this scout existed - or outside it entirely - is\n// recorded only in the YAML, which is how \"Infrastructure Engineer @ WorkOS\"\n// kept being re-surfaced months after it was declined.\nconst nowYM = new Date().toISOString().slice(0, 7);        // 'YYYY-MM'\nconst suppressions = (($('Build Target List').all()[0] || { json: {} }).json.suppressions) || [];\nlet suppressedCount = 0;\nfunction suppressed(j) {\n  for (const s of suppressions) {\n    if (norm(s.company) !== norm(j.company)) continue;\n    // reopen_after in the past means the window has expired - let it back.\n    if (s.reopen_after && String(s.reopen_after) <= nowYM) continue;\n    // No role named = the whole employer is on hold.\n    if (!s.role) return s;\n    if (norm(j.title).includes(norm(s.role))) return s;\n  }\n  return null;\n}\n\nconst newJobs = allJobs.filter(j => {\n  if (sd.seenAtsKeys[key(j)] || actedOn.has(key(j))) return false;\n  const s = suppressed(j);\n  if (s) {\n    suppressedCount++;\n    stats.bad.push(`held \"${j.title}\" (${j.company}): ${s.outcome || 'applied'} `\n      + `${s.applied_on || ''}, re-opens ${s.reopen_after}`);\n    return false;\n  }\n  return true;\n});\n\n// ── Queue cap: priority, then title tier, then skill overlap, then newest ──\n// (tier/overlap added 2026-10-04 so the slots go to on-target roles first)\nconst CAP = 25;   // was 10 until 2026-10-11 - raised for application volume\nconst TIER_RANK = { primary: 2, secondary: 1, other: 0 };\nnewJobs.sort((a, b) =>\n  (a.priority - b.priority) ||\n  (TIER_RANK[b.title_tier] - TIER_RANK[a.title_tier]) ||\n  ((b.skill_overlap || 0) - (a.skill_overlap || 0)) ||\n  String(b.posted_date || '').localeCompare(String(a.posted_date || '')));\nconst queued = newJobs.slice(0, CAP);\n\n// Mark ONLY what is surfaced, so the overflow rolls into the next run instead\n// of being buried unseen for 180 days.\nfor (const j of queued) sd.seenAtsKeys[key(j)] = Date.now();\n\nsd.lastRunStats = {\n  at: Date.now(),\n  ok: stats.seen,\n  bad: [...new Set(stats.bad)],\n  deferred: newJobs.length - queued.length,\n  boards: Object.keys(stats.seen).length,\n  actedOn: actedOn.size,\n  appliedThisWeek,\n  suppressed: suppressedCount,\n};\n\nreturn [{ json: { jobs: queued, count: queued.length } }];\n"
+      },
+      "id": "e630d072-9a7d-4656-881c-fd19d505df10"
+    },
+    {
+      "name": "Format Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1770,
+        270
+      ],
+      "parameters": {
+        "jsCode": "// Builds the scoring prompt. Mirrors the Daily Scout's prompt so both scouts\n// score on the same rubric, with the differences this lane actually has:\n// every employer here was hand-picked, and some boards ship no description.\nconst { jobs, count } = $input.first().json;\n\nif (!count || count === 0) {\n  return [{ json: { jobs: [], count: 0, prompt: null } }];\n}\n\nconst jobsList = jobs.map((j, i) => {\n  const sal = j.salary_min\n    ? (j.salary_currency && j.salary_currency !== 'USD'\n        ? `${j.salary_currency} ${j.salary_min.toLocaleString()}-${(j.salary_max || 0).toLocaleString()} (NOT USD)`\n        : '$' + j.salary_min.toLocaleString() + '-$' + (j.salary_max ? j.salary_max.toLocaleString() : '?'))\n    : (j.salary_text || 'Not listed');\n  return `${i+1}. Title: \"${j.title}\" | Company: \"${j.company}\" (target tier ${j.priority})`\n       + ` | Location: ${j.location} | Salary: ${sal}\\n`\n       + `Title tier: ${j.title_tier || 'other'} | Skill overlap: ${j.skill_overlap ?? '?'}/100 (${j.skill_clusters || 'no stack keywords'})\\n`\n       + `Description: ${j.description.substring(0, 1800)}`;\n}).join('\\n\\n');\n\nconst prompt = `You are an expert technical recruiter and career coach acting as a strict job-match scorer for a specific candidate. Analyze each job and return structured JSON.\n\nCANDIDATE PROFILE — Your Name\n- Location: Remote strongly preferred. Hybrid/onsite acceptable ONLY in Your City or the Metro Area (Nearby City A/B/C), ST. Remote-Only City counts ONLY if the role is remote. Onsite/hybrid anywhere else, or relocation, is a dealbreaker. Max 10% travel.\n- Experience: [N] years in [networking / security / infrastructure] — NOT a software developer\n- Current Role: [Title], [Employer] ([year]–present)\n  • [Scope: number of sites, users, devices]\n  • [Key platform or responsibility]\n  • [Current project]\n\n- STRONG / EXPERT skills:\n  • Routing: [e.g. BGP, OSPF, MPLS]\n  • Switching: [e.g. VLANs, QoS, vendor platforms]\n  • Wireless: [platforms]\n  • Firewalls: [vendors — config, rule lifecycle, hardening]\n  • Monitoring: [e.g. Prometheus, Grafana, SolarWinds]\n  • Systems: [OSes, hypervisors, containers]\n  • Automation: [tools — and how deep]\n  • Vendors: [list]\n\n- LIMITED / DEVELOPING:\n  • [Skill]: [honest depth — conceptual only / end-user / in training]\n  • [Skill]: [honest depth]\n\n- Certifications: [certs and degrees]\n- Salary: target ~$[N]k — a posted range that reaches $[N]k at either end is on target. More is welcome.\n- Hard dealbreakers: [e.g. onsite outside your area, relocation, clearance, drug testing, travel >10%]\n- Employer size: [preference, e.g. prefers organizations under 10,000 employees — soft flag]\n\nABOUT THIS BATCH — read carefully, it differs from the general job feed:\n- Every employer here was hand-picked for this candidate and polled directly from\n  its own applicant-tracking system. There are no reposts, no staffing agencies\n  and no aggregator spam. Do NOT penalise a role for being from an unknown source.\n- \"target tier 1\" employers are ones where networking IS the product and remote is\n  the default. Tier 2 and 3 are remote-friendly but less directly aligned.\n- Some boards publish no job description. Where the description says so explicitly,\n  score on title, company and location, cap the score at 75 because the evidence is\n  thin, and say plainly in fit_summary that the description was unavailable.\n- Salary marked \"(NOT USD)\" is quoted in another currency — convert roughly before\n  judging it against the $120k USD floor, and note the currency in red_flags.\n\nTARGET ROLES (good fit):\nPRIMARY: Network Engineer (senior), Network Reliability Engineer, Cloud Network Engineer,\nNetwork Automation Engineer, Network Security Engineer, Network Architect.\nSECONDARY: Infrastructure Engineer, Systems Engineer, Systems Administrator (senior), Platform Engineer (ops-heavy).\nGROWTH DIRECTION: he wants to move beyond pure networking into server, virtualization, cloud and\ncontainer work (VMware, Proxmox, Docker, Kubernetes) — a network role that adds those is ideal.\nESPECIALLY desirable: roles centred on networking, routing, observability/monitoring, or\nthat blend infrastructure with AI/automation.\n\nNOT A FIT FOR:\nSoftware engineering, web/application development, data engineering, ML/AI engineering,\nsales/solutions engineering, or any role where writing production code is the PRIMARY\nresponsibility.\nSite Reliability Engineer (SRE), Production Engineer and DevOps roles — he does NOT qualify for these.\nScore any role that is SRE/DevOps in substance (on-call for software services, SLOs/error budgets,\nCI/CD pipelines as the core job) at 40 or below, whatever its title.\n\nJOBS TO EVALUATE:\n${jobsList}\n\nSCORING RULES — apply strictly:\n\nAUTOMATIC DISQUALIFIERS (score 20 or below):\n- Role is primarily software/application/web development\n- Requires 3+ years of programming as the primary skill (Go/Rust/Java as the main job function)\n- Requires clearance or drug testing\n- Onsite/hybrid outside Your City / Metro Area (onsite Remote-Only City included), or requires relocation\n- Federal government agency or federal contractor role (DOE/DoD/national-lab work, regional federal contractors)\n- Remote but restricted to a country other than the US\n\nPENALTIES:\n- Minus 25: heavy coding requirements (\"you will build software\", Go/Rust/Java required)\n- Minus 25: posted salary range tops out below $120k USD\n- Minus 15: requires a CS degree or software engineering background specifically\n- Minus 10: scripting/automation required (Python OK as secondary — note as a gap)\n- Minus 10: Skill overlap below 20 (little of his stack appears in the posting)\n- Minus 8: employer very likely exceeds 10,000 employees (estimate if unstated; note in red_flags)\n\nBONUSES:\n- Plus 12: networking is central to the role (BGP/routing/anycast/edge/peering)\n- Plus 10: Title tier primary (Network Engineer family); Plus 5: Title tier secondary (Infrastructure/Systems)\n- Plus 10: Skill overlap 60 or higher; Plus 5: Skill overlap 40-59\n- Plus 5: networking role that also involves virtualization/containers/cloud (VMware, Proxmox, Docker, Kubernetes) — his growth direction\n- Plus 10: network reliability/operations focus — routing observability, firewall automation\n- Plus 8: mentions Cisco/Juniper/Palo Alto/Fortinet or specific network protocols\n- Plus 8: role blends networking/infrastructure with AI/ML ops or values AI-driven automation\n- Plus 5: Grafana/Prometheus/observability stack prominent in requirements\n- Plus 5: ops-heavy infrastructure/platform role rather than dev-heavy\n- Plus 5: PCI-DSS or compliance-focused network security\n\nReturn ONLY a valid JSON array — no markdown fences, no extra text:\n[{\n  \"index\": 1,\n  \"score\": 85,\n  \"fit_summary\": \"Exactly two sentences explaining match quality and key alignment.\",\n  \"missing_skills\": \"comma-separated required skills not in profile, or None\",\n  \"red_flags\": \"salary below target, travel, clearance, heavy coding, large employer — or None\",\n  \"tags\": [\"BGP\", \"Palo Alto\", \"Kubernetes\", \"Grafana\"],\n  \"role_type\": \"Network Engineer\",\n  \"resume_tips\": [\n    \"Emphasize BGP/MPLS experience in the summary\",\n    \"Lead with Docker/Kubernetes hands-on work\",\n    \"Add Ansible learning progress to skills\"\n  ],\n  \"cover_letter_hook\": \"Two to three sentences opening a cover letter, specific to this company and role.\"\n}]\n\nScoring guide: 90-100=perfect fit, 80-89=strong match, 65-79=good candidate, 50-64=stretch, <50=poor fit.\nIMPORTANT: only jobs scoring 70 or higher reach the candidate's queue — be honest, do not inflate to clear the bar.\nrole_type must be one of: SRE, Network Engineer, DevOps, Platform Engineer, Cloud Engineer, Infrastructure Engineer, Other\ntags: up to 8 technology/skill tags taken from the job description\nresume_tips: 3-5 specific bullets referencing his actual network/infra experience — include confirmed skills not yet on the resume (Meraki, Avaya VoIP, OSPF/MPLS, PCI-DSS, Palo Alto, Fortinet, n8n/Claude AI automation, SolarWinds/Elasticsearch) where they fit\ncover_letter_hook: reference the company or role specifically, never generic`;\n\nreturn [{ json: { jobs, prompt } }];\n"
+      },
+      "id": "07272ae6-94fa-4c6e-bf13-f6c6264d4cf4"
+    },
+    {
+      "name": "Claude AI Score",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1990,
+        270
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic (Claude)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: \"claude-haiku-4-5-20251001\", max_tokens: 8192, temperature: 0.2, messages: [{ role: \"user\", content: ($json.prompt || \"No new roles to score.\") }] }) }}",
+        "options": {}
+      },
+      "id": "83b8b684-64cc-4855-8a88-f6ca03393659"
+    },
+    {
+      "name": "Parse Scores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2210,
+        160
+      ],
+      "parameters": {
+        "jsCode": "\nconst resp = $input.first().json;\nconst { jobs } = $('Format Claude Prompt').first().json;\n\nif (!jobs || jobs.length === 0) {\n  return [{ json: { noJobs: true, message: 'No new jobs this run.' } }];\n}\n\nlet scores = [];\n  // Take the FIRST complete JSON array, scanning brackets outside strings.\n  // Haiku sometimes appends markdown commentary after the array (2026-10-04,\n  // execution 62693): cutting at the LAST ']' swallowed that text, the parse\n  // failed, and every job fell back to 50.\n  const firstJsonArray = s => {\n    const start = s.indexOf('[');\n    if (start === -1) return s;\n    let depth = 0, inStr = false, esc = false;\n    for (let i = start; i < s.length; i++) {\n      const ch = s[i];\n      if (inStr) { if (esc) esc = false; else if (ch === '\\\\') esc = true; else if (ch === '\"') inStr = false; continue; }\n      if (ch === '\"') inStr = true;\n      else if (ch === '[') depth++;\n      else if (ch === ']' && --depth === 0) return s.substring(start, i + 1);\n    }\n    return s.substring(start);\n  };\ntry {\n  const raw = (resp.content.find(b => b.type === 'text') || {}).text || '';  let cleaned = raw.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n  scores = JSON.parse(firstJsonArray(cleaned));\n} catch(e) {\n  scores = jobs.map((j, i) => ({\n    index: i + 1, score: 50,\n    fit_summary: 'Auto-scored (parse error).',\n    missing_skills: 'Unknown', red_flags: 'None',\n    tags: [], role_type: 'Other',\n    resume_tips: ['Review job description manually.'],\n    cover_letter_hook: 'Please review this position and customize your cover letter accordingly.'\n  }));\n}\n\nreturn jobs.map((job, i) => {\n  const s = scores.find(x => x.index === i + 1) || {\n    score: 50, fit_summary: 'Not scored.',\n    missing_skills: 'Unknown', red_flags: 'None',\n    tags: [], role_type: 'Other',\n    resume_tips: [], cover_letter_hook: ''\n  };\n  return { json: {\n    ...job,\n    score:             s.score,\n    fit_summary:       s.fit_summary,\n    missing_skills:    s.missing_skills,\n    red_flags:         s.red_flags,\n    tags:              Array.isArray(s.tags) ? s.tags : [],\n    role_type:         s.role_type || 'Other',\n    resume_tips:       Array.isArray(s.resume_tips) ? s.resume_tips : [s.resume_tips || ''],\n    cover_letter_hook: s.cover_letter_hook || ''\n  }};\n});\n"
+      },
+      "id": "1a95e913-bbce-41ce-a4af-bffc3cc194cc"
+    },
+    {
+      "name": "Build Cost Line",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2210,
+        580
+      ],
+      "parameters": {
+        "jsCode": "\n// Emit this call's token spend to InfluxDB. Runs as a side branch off the\n// Claude node so the scoring pipeline is never gated on a cost write.\n// Pricing mirrors scripts/log-ai-cost.sh in the NOLA repo - USD per 1M tokens,\n// verified 2026-08-26.\nconst resp = $input.first().json;\nconst u = resp.usage || {};\n\nconst model        = resp.model || 'claude-haiku-4-5';\nconst inputTokens  = u.input_tokens  || 0;\nconst outputTokens = u.output_tokens || 0;\n// Present only when the request used prompt caching; absent today, so 0.\nconst cacheRead    = u.cache_read_input_tokens     || 0;\nconst cacheWrite   = u.cache_creation_input_tokens || 0;\n\nlet inCpm, outCpm;\nif      (model.includes('haiku'))    { inCpm =  1.00; outCpm =  5.00; }\nelse if (model.includes('sonnet-5')) { inCpm =  2.00; outCpm = 10.00; }\nelse if (model.includes('sonnet'))   { inCpm =  3.00; outCpm = 15.00; }\nelse if (model.includes('opus'))     { inCpm =  5.00; outCpm = 25.00; }\nelse if (model.includes('fable'))    { inCpm = 10.00; outCpm = 50.00; }\nelse                                 { inCpm =  1.00; outCpm =  5.00; }\n\n// tokens * (USD per 1M) lands directly in micro-dollars, which is what the\n// dashboard expects - it keeps the field an integer in InfluxDB.\n// Cache reads bill at 0.1x the input rate, writes at 1.25x (5-minute TTL).\nconst micro = Math.round(\n  inputTokens  * inCpm  +\n  outputTokens * outCpm +\n  cacheRead    * inCpm * 0.10 +\n  cacheWrite   * inCpm * 1.25\n);\n\n// Escape the characters line protocol treats as structure.\nconst esc = s => String(s).replace(/[ ,=]/g, '\\\\$&');\n\nconst line =\n  `ai_cost,workflow=${esc('job-search-ats-scout')},model=${esc(model)} ` +\n  `input_tokens=${inputTokens}i,output_tokens=${outputTokens}i,` +\n  `cache_read_tokens=${cacheRead}i,cache_write_tokens=${cacheWrite}i,` +\n  `cost_microdollars=${micro}i ${Date.now() * 1000000}`;\n\nreturn [{ json: { line, model, micro } }];\n"
+      },
+      "id": "374f96da-9275-46d2-9891-7233c36dc2e7"
+    },
+    {
+      "name": "Log AI Cost",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2430,
+        580
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "InfluxDB ai_cost writer"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "http://YOUR_INFLUXDB_HOST:8086/api/v2/write?org=YOUR_ORG&bucket=ai_cost&precision=ns",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.line }}",
+        "options": {}
+      },
+      "id": "5be7775d-feac-4d83-a2f9-ff1e2e5b1d4d"
+    },
+    {
+      "name": "Prepare Notion Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2450,
+        20
+      ],
+      "parameters": {
+        "jsCode": "\nconst results = [];\nconst today = new Date().toISOString().split('T')[0];\n\nfunction descBlocks(text) {\n  const blocks = [];\n  const safe = (text || '').substring(0, 9500);\n  if (!safe) {\n    return [{object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:'(no description available)'}}]}}];\n  }\n  for (let i = 0; i < safe.length; i += 1900) {\n    blocks.push({\n      object:'block', type:'paragraph',\n      paragraph:{rich_text:[{type:'text',text:{content:safe.substring(i, i+1900)}}]}\n    });\n  }\n  return blocks;\n}\n\nfunction h2(text) {\n  return {object:'block',type:'heading_2',heading_2:{rich_text:[{type:'text',text:{content:text}}]}};\n}\nfunction divider() { return {object:'block',type:'divider',divider:{}}; }\nfunction bullet(text) {\n  return {object:'block',type:'bulleted_list_item',\n    bulleted_list_item:{rich_text:[{type:'text',text:{content:text.substring(0,2000)}}]}};\n}\nfunction para(text) {\n  return {object:'block',type:'paragraph',\n    paragraph:{rich_text:[{type:'text',text:{content:(text||'').substring(0,2000)}}]}};\n}\n\nfunction routeDb(j) {\n  var NETSEC   = \"YOUR_NOTION_DB_SECURITY\"; // Job Scout - Network Security\n  var CLOUDNET = \"YOUR_NOTION_DB_CLOUD\"; // Job Scout - Cloud Networking\n  var JOBS     = \"YOUR_NOTION_DB_MAIN\"; // Jobs (generic default)\n  var hay = ((j.title||'') + ' ' + ((j.tags||[]).join(' ')) + ' ' + (j.role_type||'')).toLowerCase();\n  var SEC = /\\b(security|infosec|cyber(security)?|soc|siem|firewall|zero[ -]?trust|ids|ips|threat|vulnerabilit(y|ies)|pen[ -]?test(ing)?|pentest|security operations)\\b/;\n  if (SEC.test(hay)) return NETSEC;\n  var NET = /\\b(network engineer|network architect|cloud network(ing)?|hybrid cloud|sd[ -]?wan|netsre|noc|wan|bgp|ospf|network operations)\\b/;\n  if (j.role_type === 'Network Engineer' || j.role_type === 'Cloud Engineer' || NET.test(hay)) return CLOUDNET;\n  return JOBS;\n}\n\nfor (const item of $input.all()) {\n  const j = item.json;\n\n  if (j.noJobs || !j.title) continue;\n  if (j.score < 70) continue;\n\n  const tips = Array.isArray(j.resume_tips)\n    ? j.resume_tips.filter(t => t && t !== 'None')\n    : [];\n\n  const children = [\n    h2('📋 Full Job Description'),\n    ...descBlocks(j.description),\n    divider(),\n    h2('🎯 Resume Customization Tips'),\n    ...(tips.length > 0\n      ? tips.slice(0,8).map(t => bullet(t))\n      : [para('No specific tips generated.')]),\n    divider(),\n    h2('✉️ Cover Letter Hook'),\n    para(j.cover_letter_hook || 'Not generated.'),\n  ];\n\n  const priority = j.score >= 80 ? 'High' : j.score >= 60 ? 'Medium' : 'Low';\n  const tagsValue = (j.tags || []).slice(0, 10).map(t => ({name: String(t).substring(0,100)}));\n  const tipsShort = tips.slice(0,3).join(' | ').substring(0,500) || 'None';\n  const clShort   = (j.cover_letter_hook || 'None').substring(0,500);\n\n  const body = {\n    parent: { database_id: routeDb(j) },\n    properties: {\n      \"Job Title\":          { title:        [{ text: { content: (j.title   || '').substring(0,200) } }] },\n      \"Company\":            { rich_text:    [{ text: { content: (j.company || '').substring(0,200) } }] },\n      \"Source\":             { select:       { name: j.ats_provider || \"ATS\" } },\n      \"Apply URL\":          { url: j.apply_url || null },\n      \"Location\":           { rich_text:    [{ text: { content: (j.location || '').substring(0,200) } }] },\n      \"Salary Min\":         { number: j.salary_min || null },\n      \"Salary Max\":         { number: j.salary_max || null },\n      \"Score\":              { number: j.score || 0 },\n      \"Fit Summary\":        { rich_text:    [{ text: { content: (j.fit_summary    || '').substring(0,2000) } }] },\n      \"Missing Skills\":     { rich_text:    [{ text: { content: (j.missing_skills || 'None').substring(0,500) } }] },\n      \"Red Flags\":          { rich_text:    [{ text: { content: (j.red_flags      || 'None').substring(0,500) } }] },\n      \"Tags\":               { multi_select: tagsValue },\n      \"Role Type\":          { select:       { name: j.role_type || 'Other' } },\n      \"Priority\":           { select:       { name: priority } },\n      \"Resume Tips\":        { rich_text:    [{ text: { content: tipsShort } }] },\n      \"Cover Letter Draft\": { rich_text:    [{ text: { content: clShort   } }] },\n      \"Status\":             { select:       { name: 'New' } },\n      \"Date Found\":         { date:         { start: today } },\n      \"Posted Date\":        { rich_text:    [{ text: { content: j.posted_date || '' } }] },\n      \"Job ID\":             { rich_text:    [{ text: { content: (j.job_id || '').substring(0,200) } }] }\n    },\n    children: children\n  };\n\n  results.push({ json: { ...j, notionBody: JSON.stringify(body) } });\n}\n\nreturn results;\n\n"
+      },
+      "id": "a43b1f43-020e-4b4b-af98-5cf030f4bcd4"
+    },
+    {
+      "name": "Notion Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2670,
+        20
+      ],
+      "parameters": {
+        "amount": 1
+      },
+      "id": "1ffdedd1-eab8-4d81-8c29-33102db2e687"
+    },
+    {
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2890,
+        20
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notionBody }}",
+        "options": {}
+      },
+      "id": "5165b652-497f-4c14-9179-7259670cc685"
+    },
+    {
+      "name": "Build Queue Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2450,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// ── Output as a work queue, not a newsletter ─────────────────────────────\n// scout-targets.yaml.yml asks for format: queue — a short numbered list that\n// can actually be finished in a sitting, ordered by target tier then recency,\n// with the apply URL on every row.\nconst MIN_SCORE = 70;\nconst WEEKLY_TARGET = 5;\n\nconst items = $input.all().filter(it =>\n  it && it.json && !it.json.noJobs &&\n  typeof it.json.score === 'number' && it.json.score >= MIN_SCORE);\n\nconst sd  = $getWorkflowStaticData('global');\nconst st  = sd.lastRunStats || { ok: {}, bad: [], deferred: 0, boards: 0 };\nconst bad = st.bad || [];\n\n// Applications actually sent, read back from Notion: roles whose Status he set\n// to \"Applied\" in the last 7 days. Normalize counts these while it is already\n// reading Notion to exclude acted-on roles.\nconst appliedThisWeek = st.appliedThisWeek || 0;\nconst actedOnTotal = st.actedOn || 0;\nconst shortfall = Math.max(0, WEEKLY_TARGET - appliedThisWeek);\n\n// Roles surfaced, tracked separately - queueing is not applying, and conflating\n// the two would flatter the number.\nif (!Array.isArray(sd.queuedLog)) sd.queuedLog = [];\nconst weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;\nsd.queuedLog = sd.queuedLog.filter(t => t > weekAgo);\nfor (let i = 0; i < items.length; i++) sd.queuedLog.push(Date.now());\nconst queuedThisWeek = sd.queuedLog.length;\n\nconst pace = appliedThisWeek >= WEEKLY_TARGET\n  ? `✅ ${appliedThisWeek}/${WEEKLY_TARGET} applications sent this week`\n  : `${appliedThisWeek}/${WEEKLY_TARGET} applications sent this week — ${shortfall} to go`;\n\nconst today = new Date().toLocaleDateString('en-US',\n  { weekday: 'long', month: 'long', day: 'numeric' });\n\n// Boards that returned nothing are the failure mode that matters here: a board\n// token going stale is silent otherwise.\nconst boardsPolled = Object.keys(st.ok || {}).length;\nconst silent = bad.filter(b => /returned no postings|layout changed|fetch failed/.test(b));\nconst health = [\n  silent.length ? `⚠️ ${silent.length} board(s) silent: ${silent.slice(0, 4).join('; ')}` : '',\n  st.deferred ? `ℹ️ ${st.deferred} more qualifying role(s) held for the next run` : '',\n].filter(Boolean).join('\\n');\n\nif (!items.length) {\n  // Stay silent on a genuinely quiet day; speak up only if a board broke.\n  if (!silent.length) return [];\n  return [{ json: {\n    has_jobs: false,\n    discord_content: `**🎯 ATS Scout** — nothing new, and boards are failing.\\n${health}`,\n    email_subject: 'ATS Scout — no new roles, boards failing',\n    email_html: `<p>Polled ${boardsPolled} board(s), nothing cleared the bar.</p><p>${health.replace(/\\n/g, '<br>')}</p>`,\n  } }];\n}\n\nconst sorted = [...items].sort((a, b) =>\n  (a.json.priority - b.json.priority) ||\n  String(b.json.posted_date || '').localeCompare(String(a.json.posted_date || '')) ||\n  (b.json.score - a.json.score));\n\nconst salaryOf = j => {\n  if (!j.salary_min) return j.salary_text || 'Not listed';\n  if (j.salary_currency && j.salary_currency !== 'USD') return j.salary_text;\n  const k = n => '$' + Math.round(n / 1000) + 'k';\n  return j.salary_max ? `${k(j.salary_min)}–${k(j.salary_max)}` : `${k(j.salary_min)}+`;\n};\nconst tierLabel = p => p === 1 ? 'Tier 1' : p === 2 ? 'Tier 2' : 'Tier 3';\n\n// ── Discord: the whole queue, short lines ────────────────────────────────\nlet discord = `**🎯 ATS Scout — ${today}**\\n`\n  + `${sorted.length} role(s) to work through · ${boardsPolled} boards polled\\n`\n  + `${pace} · ${queuedThisWeek} queued this week\\n\\n`;\nsorted.forEach((it, i) => {\n  const j = it.json;\n  const line = `**${i + 1}. ${j.title}** — ${j.company} · ${tierLabel(j.priority)}\\n`\n    + `\\`${j.score}\\` · ${j.location} · ${salaryOf(j)}\\n`\n    + `${j.apply_url}\\n\\n`;\n  if ((discord + line).length < 1850) discord += line;\n});\nif (health) discord += health + '\\n';\ndiscord += `📋 Mark **Status → Applied** in Notion as you go — applied roles never resurface.`;\n\n// ── Email: same queue, with the reasoning attached to each row ────────────\nconst rows = sorted.map((it, i) => {\n  const j = it.json;\n  const c = j.score >= 80 ? '#2d8a4e' : '#d4940a';\n  const tags = (j.tags || []).slice(0, 6)\n    .map(t => `<span style=\"background:#eef4f8;color:#2980b9;padding:2px 7px;border-radius:10px;font-size:11px;margin-right:4px\">${t}</span>`)\n    .join('');\n  return `<tr style=\"border-bottom:1px solid #eaeaea\">\n  <td style=\"padding:14px 10px;vertical-align:top;width:52px;text-align:center\">\n    <div style=\"font-size:20px;font-weight:700;color:#888\">${i + 1}</div>\n    <div style=\"background:${c};color:#fff;padding:3px 8px;border-radius:11px;font-weight:700;font-size:13px;margin-top:6px\">${j.score}</div>\n  </td>\n  <td style=\"padding:14px 10px;vertical-align:top\">\n    <div style=\"font-size:15px;font-weight:700;color:#1f2d3d\">${j.title}</div>\n    <div style=\"color:#555;margin:3px 0 6px\">\n      ${j.company} <span style=\"color:#aaa\">·</span> ${tierLabel(j.priority)}\n      <span style=\"color:#aaa\">·</span> ${j.location}\n      <span style=\"color:#aaa\">·</span> <span style=\"color:#27ae60\">${salaryOf(j)}</span>\n      ${j.posted_date ? `<span style=\"color:#aaa\"> · posted ${j.posted_date}</span>` : ''}\n    </div>\n    <div style=\"color:#444;font-size:13px;margin-bottom:6px\">${j.fit_summary || ''}</div>\n    ${tags ? `<div style=\"margin-bottom:6px\">${tags}</div>` : ''}\n    ${j.missing_skills && j.missing_skills !== 'None' ? `<div style=\"color:#e67e22;font-size:12px\">⚠ Missing: ${j.missing_skills}</div>` : ''}\n    ${j.red_flags && j.red_flags !== 'None' ? `<div style=\"color:#e74c3c;font-size:12px\">🚩 ${j.red_flags}</div>` : ''}\n    <div style=\"margin-top:8px\">\n      <a href=\"${j.apply_url}\" style=\"background:#2c6fbb;color:#fff;padding:7px 14px;border-radius:5px;text-decoration:none;font-size:13px;font-weight:600\">Apply →</a>\n    </div>\n  </td></tr>`;\n}).join('');\n\nconst email_html = `<!DOCTYPE html><html><body style=\"font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:760px;margin:0 auto;color:#222;background:#fff\">\n<h2 style=\"color:#1f2d3d;border-bottom:3px solid #2c6fbb;padding-bottom:10px;margin-bottom:6px\">🎯 ATS Scout — ${today}</h2>\n<p style=\"color:#666;font-size:13px;margin-top:0\">\n  Polled <strong>${boardsPolled}</strong> company boards directly — no aggregators, no reposts.\n  <strong>${sorted.length}</strong> role(s) in today's queue ·\n  <strong>${queuedThisWeek}</strong> queued in the last 7 days.\n</p>\n<p style=\"background:${appliedThisWeek >= WEEKLY_TARGET ? '#eaf7ee' : '#f4f7fb'};border-left:3px solid ${appliedThisWeek >= WEEKLY_TARGET ? '#2d8a4e' : '#2c6fbb'};padding:9px 12px;font-size:13px;margin-top:0\">\n  <strong>${pace}</strong><br>\n  <span style=\"color:#666\">Counted from Notion — ${actedOnTotal} role(s) marked applied or closed overall, and none of them will resurface here.</span>\n</p>\n${health ? `<p style=\"background:#fff8e1;border-left:3px solid #e6a700;padding:9px 12px;font-size:13px;color:#6b5200\">${health.replace(/\\n/g, '<br>')}</p>` : ''}\n<table style=\"width:100%;border-collapse:collapse;margin-top:8px\">${rows}</table>\n<p style=\"margin-top:22px;color:#666;font-size:13px\">\n  Each role has a Notion page with tailored resume tips and a cover-letter opener.\n  <a href=\"https://www.notion.so/YOUR_NOTION_DB_URL\">Open the board →</a><br>\n  <strong>Set Status → Applied</strong> as you go — that is what the weekly count reads,\n  and what permanently removes a role from this queue.\n</p>\n</body></html>`;\n\nreturn [{ json: {\n  has_jobs: true,\n  discord_content: discord,\n  email_html,\n  email_subject: `ATS Scout: ${sorted.length} role(s) to work — ${today}`,\n} }];\n"
+      },
+      "id": "c6a79917-fe06-4e07-aaa4-c3478f420f90"
+    },
+    {
+      "name": "Discord Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2690,
+        240
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.discord_content }}"
+            },
+            {
+              "name": "username",
+              "value": "ATS Scout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d1f843a5-fff0-4a84-b6e1-72f88fe9a46d"
+    },
+    {
+      "name": "Send Gmail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2690,
+        400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "",
+          "name": "Gmail SMTP"
+        }
+      },
+      "parameters": {
+        "fromEmail": "you@example.com",
+        "toEmail": "you@example.com",
+        "subject": "={{ $json.email_subject }}",
+        "html": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "a0d0df74-c4e5-4140-871c-fc867f7c3319"
+    }
+  ],
+  "connections": {
+    "Daily 8AM": {
+      "main": [
+        [
+          {
+            "node": "List Notion Boards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On Demand": {
+      "main": [
+        [
+          {
+            "node": "List Notion Boards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Notion Boards": {
+      "main": [
+        [
+          {
+            "node": "Fetch Acted-On Roles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Acted-On Roles": {
+      "main": [
+        [
+          {
+            "node": "Build Target List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Target List": {
+      "main": [
+        [
+          {
+            "node": "Fetch ATS Board",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch ATS Board": {
+      "main": [
+        [
+          {
+            "node": "Extract Detail URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Detail URLs": {
+      "main": [
+        [
+          {
+            "node": "Fetch Job Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Job Detail": {
+      "main": [
+        [
+          {
+            "node": "Normalize ATS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize ATS": {
+      "main": [
+        [
+          {
+            "node": "Format Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude AI Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI Score": {
+      "main": [
+        [
+          {
+            "node": "Parse Scores",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Cost Line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Cost Line": {
+      "main": [
+        [
+          {
+            "node": "Log AI Cost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Scores": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notion Body",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Queue Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notion Body": {
+      "main": [
+        [
+          {
+            "node": "Notion Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Queue Report": {
+      "main": [
+        [
+          {
+            "node": "Discord Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,1143 @@
+{
+  "name": "Job Search - Dream Scout",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 15 * * *"
+            }
+          ]
+        }
+      },
+      "id": "d1",
+      "name": "Daily 8AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "path": "dream-job-search",
+        "options": {}
+      },
+      "id": "d2",
+      "name": "On Demand",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://jsearch.p.rapidapi.com/search-v2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "infrastructure engineer OR platform engineer OR staff infrastructure engineer remote"
+            },
+            {
+              "name": "num_pages",
+              "value": "2"
+            },
+            {
+              "name": "date_posted",
+              "value": "week"
+            },
+            {
+              "name": "work_from_home",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Key",
+              "value": "YOUR_RAPIDAPI_KEY"
+            },
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "jsearch.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "d4",
+      "name": "JSearch - Platform/Infra",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://jsearch.p.rapidapi.com/search-v2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "senior systems engineer OR IT infrastructure engineer OR network systems engineer OR lead infrastructure engineer remote"
+            },
+            {
+              "name": "num_pages",
+              "value": "2"
+            },
+            {
+              "name": "date_posted",
+              "value": "week"
+            },
+            {
+              "name": "work_from_home",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Key",
+              "value": "YOUR_RAPIDAPI_KEY"
+            },
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "jsearch.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "d5",
+      "name": "JSearch - Polymath",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.adzuna.com/v1/api/jobs/us/search/1",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "YOUR_ADZUNA_APP_ID"
+            },
+            {
+              "name": "app_key",
+              "value": "YOUR_ADZUNA_APP_KEY"
+            },
+            {
+              "name": "what_or",
+              "value": "infrastructure engineer platform engineer systems engineer IT engineer cloud network"
+            },
+            {
+              "name": "where",
+              "value": "remote"
+            },
+            {
+              "name": "results_per_page",
+              "value": "20"
+            },
+            {
+              "name": "sort_by",
+              "value": "date"
+            },
+            {
+              "name": "max_days_old",
+              "value": "7"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "d6",
+      "name": "Adzuna Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://remotive.com/api/remote-jobs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "category",
+              "value": "devops-sysadmin"
+            },
+            {
+              "name": "limit",
+              "value": "20"
+            },
+            {
+              "name": "search",
+              "value": "infrastructure OR platform OR systems engineer cloud network"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "d7",
+      "name": "Remotive Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://indeed12.p.rapidapi.com/jobs/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "infrastructure engineer OR platform engineer OR senior systems engineer OR lead infrastructure engineer"
+            },
+            {
+              "name": "location",
+              "value": "remote"
+            },
+            {
+              "name": "page_id",
+              "value": "1"
+            },
+            {
+              "name": "country",
+              "value": "us"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Key",
+              "value": "YOUR_RAPIDAPI_KEY"
+            },
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "indeed12.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "d_indeed",
+      "name": "Indeed Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        768
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "url": "https://remoteok.com/api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "tags",
+              "value": "devops,infrastructure,platform,sysadmin,cloud,network"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (job-search-bot/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "d_remoteok",
+      "name": "Remote OK Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.themuse.com/api/public/jobs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "category",
+              "value": "Engineering"
+            },
+            {
+              "name": "level",
+              "value": "Senior Level"
+            },
+            {
+              "name": "page",
+              "value": "0"
+            },
+            {
+              "name": "descending",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "d_muse",
+      "name": "The Muse Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        1248
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d_mab",
+      "name": "Merge AB",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        -48
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d_mcd",
+      "name": "Merge CD",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        352
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d_mef",
+      "name": "Merge EF",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        720
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d_mabcd",
+      "name": "Merge ABCD",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        928,
+        160
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d_mefg",
+      "name": "Merge EFG",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        928,
+        848
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d8",
+      "name": "Merge All",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1152,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\nlet allJobs = [];\n\nfor (const item of items) {\n  const d = item.json;\n\n  if (d.data && (Array.isArray(d.data) || Array.isArray(d.data.jobs))) {\n    const _jsJobs = Array.isArray(d.data) ? d.data : d.data.jobs;\n    for (const j of _jsJobs) {\n      allJobs.push({\n        job_id:      'jsearch_' + j.job_id,\n        title:       j.job_title || '',\n        company:     j.employer_name || '',\n        location:    j.job_is_remote ? 'Remote' : `${j.job_city||''} ${j.job_state||''} ${j.job_country||''}`.trim(),\n        is_remote:   j.job_is_remote === true,\n        apply_url:   j.job_apply_link || '',\n        description: (j.job_description || '').substring(0, 3000),\n        salary_min:  j.job_min_salary || null,\n        salary_max:  j.job_max_salary || null,\n        salary_text: '',\n        posted_date: j.job_posted_at_timestamp\n          ? new Date(j.job_posted_at_timestamp * 1000).toISOString().split('T')[0] : '',\n        source: 'JSearch'\n      });\n    }\n  }\n  else if (d.results && Array.isArray(d.results) && typeof d.count === 'number') {\n    for (const j of d.results) {\n      allJobs.push({\n        job_id:      'adzuna_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.title || '',\n        company:     (j.company && j.company.display_name) || '',\n        location:    (j.location && j.location.display_name) || '',\n        is_remote:   ((j.title||'') + ' ' + (j.description||'')).toLowerCase().includes('remote'),\n        apply_url:   j.redirect_url || '',\n        description: (j.description || '').substring(0, 3000),\n        salary_min:  j.salary_min || null,\n        salary_max:  j.salary_max || null,\n        salary_text: '',\n        posted_date: j.created ? j.created.split('T')[0] : '',\n        source: 'Adzuna'\n      });\n    }\n  }\n  else if (d.results && Array.isArray(d.results) && typeof d.page === 'number') {\n    for (const j of d.results) {\n      if (!j.name) continue;\n      allJobs.push({\n        job_id:      'muse_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.name || '',\n        company:     (j.company && j.company.name) || '',\n        location:    'Remote',\n        is_remote:   true,\n        apply_url:   (j.refs && j.refs.landing_page) || '',\n        description: (j.contents || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n        salary_min:  null,\n        salary_max:  null,\n        salary_text: '',\n        posted_date: j.publication_date ? j.publication_date.split('T')[0] : '',\n        source: 'TheMuse'\n      });\n    }\n  }\n  else if (d.jobs && Array.isArray(d.jobs)) {\n    for (const j of d.jobs) {\n      allJobs.push({\n        job_id:      'remotive_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.title || '',\n        company:     j.company_name || '',\n        location:    j.candidate_required_location || 'Remote',\n        is_remote:   true,\n        apply_url:   j.url || '',\n        description: (j.description || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n        salary_min:  null,\n        salary_max:  null,\n        salary_text: j.salary || '',\n        posted_date: j.publication_date ? j.publication_date.split('T')[0] : '',\n        source: 'Remotive'\n      });\n    }\n  }\n  else if (d.hits && Array.isArray(d.hits)) {\n    for (const j of d.hits) {\n      allJobs.push({\n        job_id:      'indeed_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.title || '',\n        company:     j.company || '',\n        location:    (j.location||'').toLowerCase().includes('remote') ? 'Remote' : (j.location || ''),\n        is_remote:   (j.location||'').toLowerCase().includes('remote')\n                  || ((j.title||'') + ' ' + (j.description||j.summary||'')).toLowerCase().includes('remote'),\n        apply_url:   j.url || j.link || '',\n        description: (j.description || j.summary || j.snippet || '').substring(0, 3000),\n        salary_min:  null,\n        salary_max:  null,\n        salary_text: j.salary || '',\n        posted_date: j.date || j.datePosted || '',\n        source: 'Indeed'\n      });\n    }\n  }\n  else if (Array.isArray(d)) {\n    for (const j of d.slice(1)) {\n      if (!j || !j.position) continue;\n      allJobs.push({\n        job_id:      'remoteok_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.position || '',\n        company:     j.company || '',\n        location:    'Remote',\n        is_remote:   true,\n        apply_url:   j.apply_url || j.url || '',\n        description: (j.description || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n        salary_min:  j.salary_min ? parseInt(j.salary_min) : null,\n        salary_max:  j.salary_max ? parseInt(j.salary_max) : null,\n        salary_text: '',\n        posted_date: j.date ? j.date.split('T')[0] : '',\n        source: 'RemoteOK'\n      });\n    }\n  }\n}\n\n// Remote, or in an allowed WA metro (hybrid/onsite is fine there).\n// Remote-Only City is REMOTE ONLY since 2026-10-04, so it is not an onsite metro.\nconst WA_OK = ['your city', 'nearby city a', 'nearby city b', 'nearby city c', 'metro area',\n               'metro area'];\nconst inWaMetro = j => {\n  const l = (j.location || '').toLowerCase();\n  return WA_OK.some(k => l.includes(k)) && /washington|\\bwa\\b/.test(l);\n};\nallJobs = allJobs.filter(j =>\n  j.is_remote || j.location.toLowerCase().includes('remote') || inWaMetro(j)\n);\n\n// Hard exclusions — drop obvious software/web dev roles\n// NOTE: 'staff software engineer' and 'principal software' excluded, but NOT plain 'staff engineer'\nconst DEV_TITLES = [\n  'software engineer','software developer','software development',\n  'web developer','web engineer','frontend','front-end','back-end','backend',\n  'full stack','fullstack','full-stack',\n  'mobile developer','ios developer','android developer',\n  'data engineer','data scientist','ml engineer','machine learning',\n  'application developer','application engineer',\n  'java developer','python developer','ruby developer','rails developer',\n  'react engineer','angular engineer','ui engineer','ux engineer',\n  'staff software engineer','principal software',\n];\nallJobs = allJobs.filter(j => {\n  const title = j.title.toLowerCase();\n  return !DEV_TITLES.some(kw => title.includes(kw));\n});\n\n// SRE / DevOps are out of scope (2026-10-01) - he does not qualify.\n// \"Network Reliability Engineer\" is network work and stays.\nallJobs = allJobs.filter(j => {\n  const t = j.title.toLowerCase();\n  if (/\\bsre\\b|site reliability|\\bdevops\\b|\\bdev ops\\b/.test(t)) return false;\n  if (t.includes('reliability') && !t.includes('network reliability')) return false;\n  return true;\n});\n\n// Title must signal infra/ops/network — expanded for polymath roles\nconst TITLE_OK = [\n  'network reliability','firewall engineer','network automation',\n  'network engineer','network architect','network administrator','network operations',\n  'infrastructure engineer','infrastructure architect',\n  'platform engineer','cloud engineer','cloud network',\n  'systems engineer','systems administrator','sysadmin',\n  'noc engineer','network security engineer','infrastructure security',\n  'cloud security engineer','firewall',\n  'it engineer','it infrastructure','senior it',\n  'staff engineer',\n  'principal engineer',\n  'lead engineer',\n  'senior engineer',\n];\nallJobs = allJobs.filter(j => {\n  const title = j.title.toLowerCase();\n  return TITLE_OK.some(kw => title.includes(kw));\n});\n\n// Salary: the posted band must reach $120k at EITHER end (2026-10-04). Unlisted pay is kept.\nconst SAL_FLOOR = 120000;\nconst annual = v => {\n  const n = Number(v);\n  if (!n) return null;\n  if (n < 1000) return n * 2080;     // hourly\n  if (n < 25000) return n * 12;      // monthly\n  return n;\n};\nallJobs = allJobs.filter(j => {\n  const vals = [annual(j.salary_min), annual(j.salary_max)].filter(Boolean);\n  return !vals.length || Math.max(...vals) >= SAL_FLOOR;\n});\n\n// Exclusion keywords\nconst EXCL = [\n  'clearance required','requires clearance','must have clearance','active secret',\n  'top secret','ts/sci','secret clearance','drug test','drug screen',\n  'pre-employment drug','drug free workplace required'\n];\nallJobs = allJobs.filter(j => {\n  const txt = (j.title + ' ' + j.description + ' ' + j.company).toLowerCase();\n  return !EXCL.some(kw => txt.includes(kw));\n});\n\n// Skip jobs where writing app code is the PRIMARY responsibility\nconst CODE_PRIMARY = [\n  'building scalable web application','develop backend service',\n  'full-stack development','experience with react is required',\n  'ruby on rails','django framework','.net development','java spring boot',\n  'mobile application development','design and develop software product',\n  'software development lifecycle is your','you will write and maintain code',\n];\nallJobs = allJobs.filter(j => {\n  const descTop = j.description.toLowerCase().substring(0, 1000);\n  return !CODE_PRIMARY.some(kw => descTop.includes(kw));\n});\n\n// Defense contractor exclusions\nconst DEFENSE = [\n  'lockheed martin','raytheon','northrop grumman','booz allen',\n  'general dynamics','l3harris','bae systems','leidos'\n];\nallJobs = allJobs.filter(j =>\n  !DEFENSE.some(c => j.company.toLowerCase().includes(c))\n);\n\n// No clearance, no federal / federal-contractor work (2026-10-04). Same lists\n// as the Daily Scout. State/local government is fine. The body phrases are\n// narrow on purpose: \"As a federal contractor...\" is EEO boilerplate at most\n// large private employers.\nconst kwHit = (txt, k) => new RegExp('(^|[^a-z0-9])' + k.replace(/[.*+?^${}()|[\\]\\\\/]/g, '\\\\$&') + '(e?s)?([^a-z0-9]|$)').test(txt);\nconst FED_EMPLOYERS = [\n  'amentum','federal reserve','caci','saic','leidos',\n  'mantech','peraton','gdit','general dynamics information','apogee','feditc',\n  'federal it consulting','anduril','shield ai',\n];\nconst FED_BODY = [\n  'department of energy','doe contract','national laboratory',\n  'dod customer','support of the dod','support of dod','federal customer',\n  'federal government client','federal agency client','supporting federal agencies',\n  'security clearance is required','clearance is required','active clearance',\n  'maintain a security clearance','maintain a clearance','obtain a security clearance',\n  'eligible for a security clearance','public trust clearance','public trust position',\n  'dod 8570','dod 8140',\n];\nallJobs = allJobs.filter(j => {\n  const t = j.title.toLowerCase();\n  if (t.includes('clearance') || /\\bts\\/sci\\b|\\bsecret\\b/.test(t)) return false;\n  if (FED_EMPLOYERS.some(k => kwHit((j.company || '').toLowerCase(), k))) return false;\n  const body = (j.description || '').toLowerCase();\n  return !FED_BODY.some(k => body.includes(k));\n});\n\n// Dedup — dream scout has its own seen list, separate from daily scout\nconst sd = $getWorkflowStaticData('global');\nif (!sd.seenJobIds) sd.seenJobIds = {};\nconst cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;\nfor (const id of Object.keys(sd.seenJobIds)) {\n  if (sd.seenJobIds[id] < cutoff) delete sd.seenJobIds[id];\n}\nconst newJobs = allJobs.filter(j => !sd.seenJobIds[j.job_id]);\nfor (const j of newJobs) sd.seenJobIds[j.job_id] = Date.now();\n\nconst limited = newJobs.slice(0, 30);\nreturn [{ json: { jobs: limited, count: limited.length } }];\n\n"
+      },
+      "id": "d9",
+      "name": "Normalize + Filter + Dedup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst { jobs, count } = $input.first().json;\n\nif (!count || count === 0) {\n  return [{ json: { jobs: [], count: 0, prompt: null } }];\n}\n\nconst jobsList = jobs.map((j, i) => {\n  const sal = j.salary_min\n    ? '$' + j.salary_min.toLocaleString() + '-$' + (j.salary_max ? j.salary_max.toLocaleString() : '?')\n    : (j.salary_text || 'Not listed');\n  return `${i+1}. Title: \"${j.title}\" | Company: \"${j.company}\" | Salary: ${sal} | Source: ${j.source}\\nDescription: ${j.description.substring(0, 1200)}`;\n}).join('\\n\\n');\n\nconst prompt = `You are evaluating job postings for a DREAM JOB search. This is a high-bar filter — only jobs scoring 80+ get surfaced. Most jobs will NOT qualify. Be strict.\n\nCANDIDATE: Your Name\n- [N] years [domains] — NOT a software developer\n- Current: [Title], [Employer] ([scale])\n- Strong skills: [comma-separated list]\n- Cloud: [honest depth]\n- Automation: [tools and depth]\n- Hard requirements: posted pay band must reach $[N]K+, [other dealbreakers]. Remote strongly preferred; hybrid/onsite acceptable ONLY in Your City or the Metro Area — nowhere else, no relocation.\n\nDREAM JOB DEFINITION:\nSmaller company (<~3,000 employees, ideally <500) where the role spans MULTIPLE technology domains —\nnetworking, cloud, security, containers, AI/ML infrastructure, and servers. The candidate wants to\nbe the person who handles everything, not a single-domain specialist. Hands-on IC only (no management).\nModern tooling. Varied challenges every day.\n\nSCORING FRAMEWORK — return TWO component scores that sum to the final score:\n\nCANDIDATE FIT (0–50 points): Does the candidate have the skills for this role?\n  45–50: Near-perfect technical match\n  35–44: Strong match, minor gaps\n  25–34: Good match, notable gaps\n  15–24: Partial match, significant gaps\n   0–14: Poor technical fit\n\nDREAM FIT (0–50 points): Does this match the dream criteria?\n\n  AUTOMATIC DREAM DISQUALIFIERS (dream_fit ≤ 5):\n  - Pure single-domain role (ONLY routing/switching OR ONLY SIEM OR ONLY VMs — no breadth)\n  - Management is a primary duty (EM, Director, VP, \"manage a team of engineers\")\n  - Very large enterprise with no breadth signal (\"one of 200 network engineers\", \"global corporate IT\")\n  - NOC/ticket-queue-only operations (no design, build, or ownership work)\n  - Site Reliability Engineer (SRE) or DevOps role in substance (on-call for software services,\n    SLOs/error budgets, CI/CD pipelines as the core job) — he does NOT qualify for these\n\n  DREAM POSITIVE SIGNALS:\n  +20: Strong small company signals (startup, Series A/B/C, <200 employees, \"small team\",\n       \"growing company\", \"we're a team of X\", \"you'll be our first infra hire\")\n  +15: Multi-domain breadth — role explicitly requires 3+ of: [networking, cloud (AWS/Azure/GCP),\n       security/firewalls, containers/K8s, AI/ML infrastructure, Linux/servers,\n       observability/monitoring]\n  +12: \"Wear many hats\" / generalist language (\"own the infrastructure end-to-end\", \"broad scope\",\n       \"full-stack infrastructure\", \"jack of all trades\", \"you'll touch everything\")\n  +10: Modern homelab-adjacent stack (Kubernetes, Terraform/IaC, Prometheus/Grafana, self-hosted,\n       open source tooling, GitOps)\n  +8:  AI/ML company or GPU/LLM infrastructure (AI startup, ML platform, GPU clusters, model serving)\n  +8:  Cloud + on-prem hybrid with real physical networking (not pure cloud console ops)\n  +6:  Container/Kubernetes depth as part of broader multi-domain role\n  +5:  Observability ownership as part of broader role (Grafana, Prometheus, Loki, Datadog)\n  +5:  Company mission that sounds genuinely interesting or unique\n\n  DREAM NEGATIVE SIGNALS:\n  -20: Large enterprise / Fortune 500 signals with no breadth (\"global network team\", Fortune 500,\n       \"you'll focus exclusively on network operations\")\n  -15: Scope is only one technology domain throughout the entire description\n  -12: Management duties are a significant component (\"manage junior engineers\", hiring loop)\n  -10: Pure cloud console ops (only AWS GUI work, no physical infra, no networking depth)\n  -8:  Heavy ITIL/ITSM bureaucracy as the primary work mode (ticket queue driven, no build work)\n  -5:  MSP/consulting role deployed to external clients (not building internal infrastructure)\n\nFINAL SCORE = candidate_fit + dream_fit\nOnly surface jobs with final score >= 80.\n\nAUTOMATIC FULL DISQUALIFIERS (score = 0 regardless of above):\n- Requires security clearance or drug testing\n- Primary role is software/application/web development\n- Onsite/hybrid outside Your City / Metro Area (onsite Remote-Only City included), or requires relocation\n- Federal government agency or federal contractor role (DOE/DoD/national-lab work, regional federal contractors)\n\nJOBS TO EVALUATE:\n${jobsList}\n\nReturn ONLY a valid JSON array — no markdown fences, no extra text:\n[{\n  \"index\": 1,\n  \"score\": 87,\n  \"candidate_fit\": 45,\n  \"dream_fit\": 42,\n  \"fit_summary\": \"First sentence: technical match quality. Second sentence: why this is or isn't dream-tier.\",\n  \"dream_highlights\": [\"Small startup (~80 employees)\", \"Owns network + cloud + K8s + security\", \"Modern stack: Terraform + AWS + Grafana\"],\n  \"missing_skills\": \"specific gaps or None\",\n  \"red_flags\": \"salary below $120k, onsite outside allowed WA metros, clearance, heavy coding, management, too large — or None\",\n  \"tags\": [\"Kubernetes\", \"AWS\", \"Networking\", \"Docker\", \"Terraform\"],\n  \"role_type\": \"Infrastructure Engineer\",\n  \"resume_tips\": [\n    \"Lead with Current Employer 350-location scale to show enterprise-to-startup bridge ability\",\n    \"Highlight homelab Docker/K8s to show hands-on modern stack experience\",\n    \"Surface Fortinet SD-WAN active deployment to match their WAN ask\"\n  ],\n  \"cover_letter_hook\": \"Two to three sentences referencing the company size/mission and the multi-domain role scope.\"\n}]\n\nrole_type: closest match to actual job title/category\ntags: up to 8 key technology tags directly from the job description\nresume_tips: 3–5 specific actionable bullets referencing the candidate's actual confirmed experience\ndream_highlights: 2–4 specific signals from the posting that make it dream-tier (or explain why it falls short)\ncover_letter_hook: reference the company specifically — mission, size, or unique aspects`;\n\nreturn [{ json: { jobs, prompt } }];\n"
+      },
+      "id": "d10",
+      "name": "Format Dream Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: \"claude-haiku-4-5-20251001\", max_tokens: 8192, temperature: 0.2, messages: [{ role: \"user\", content: ($json.prompt || \"No new jobs to score.\") }] }) }}",
+        "options": {}
+      },
+      "id": "d11",
+      "name": "Claude AI Score",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1808,
+        528
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic (Claude)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp = $input.first().json;\nconst { jobs } = $('Format Dream Prompt').first().json;\n\nif (!jobs || jobs.length === 0) {\n  return [{ json: { noJobs: true, message: 'No new jobs this run.' } }];\n}\n\nlet scores = [];\ntry {\n  const raw = (resp.content.find(b => b.type === 'text') || {}).text || '';\n  const cleaned = raw.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n  scores = JSON.parse(cleaned);\n} catch(e) {\n  return [{ json: { noJobs: true, message: 'Score parse error — check Claude response in logs.' } }];\n}\n\n// DREAM THRESHOLD: only 80+ earns an alert\nconst dreamJobs = jobs\n  .map((job, i) => {\n    const s = scores.find(x => x.index === i + 1);\n    if (!s) return null;\n    return {\n      ...job,\n      score:             s.score,\n      candidate_fit:     s.candidate_fit || 0,\n      dream_fit:         s.dream_fit || 0,\n      fit_summary:       s.fit_summary || '',\n      dream_highlights:  Array.isArray(s.dream_highlights) ? s.dream_highlights : [],\n      missing_skills:    s.missing_skills || 'None',\n      red_flags:         s.red_flags || 'None',\n      tags:              Array.isArray(s.tags) ? s.tags : [],\n      role_type:         s.role_type || 'Infrastructure Engineer',\n      resume_tips:       Array.isArray(s.resume_tips) ? s.resume_tips : [s.resume_tips || ''],\n      cover_letter_hook: s.cover_letter_hook || ''\n    };\n  })\n  .filter(j => j && j.score >= 80);\n\nif (dreamJobs.length === 0) {\n  return [{ json: { noJobs: true, message: `Evaluated ${jobs.length} jobs — none cleared the 80+ dream threshold.` } }];\n}\n\nreturn dreamJobs.map(j => ({ json: j }));\n"
+      },
+      "id": "d12",
+      "name": "Parse Dream Scores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2032,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.noJobs }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d_if",
+      "name": "Has Dream Jobs?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function routeDb(j) {\n  var NETSEC   = \"YOUR_NOTION_DB_SECURITY\"; // Job Scout - Network Security\n  var CLOUDNET = \"YOUR_NOTION_DB_CLOUD\"; // Job Scout - Cloud Networking\n  var JOBS     = \"YOUR_NOTION_DB_MAIN\"; // Jobs (generic default)\n  var hay = ((j.title||'') + ' ' + ((j.tags||[]).join(' ')) + ' ' + (j.role_type||'')).toLowerCase();\n  var SEC = /\\b(security|infosec|cyber(security)?|soc|siem|firewall|zero[ -]?trust|ids|ips|threat|vulnerabilit(y|ies)|pen[ -]?test(ing)?|pentest|security operations)\\b/;\n  if (SEC.test(hay)) return NETSEC;\n  var NET = /\\b(network engineer|network architect|cloud network(ing)?|hybrid cloud|sd[ -]?wan|netsre|noc|wan|bgp|ospf|network operations)\\b/;\n  if (j.role_type === 'Network Engineer' || j.role_type === 'Cloud Engineer' || NET.test(hay)) return CLOUDNET;\n  return JOBS;\n}\n\n\nconst j = $json;\nif (!j.title) return [];\n\nconst today = new Date().toISOString().split('T')[0];\n\nfunction descBlocks(text) {\n  const blocks = [];\n  const safe = (text || '').substring(0, 9500);\n  if (!safe) return [{object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:'(no description available)'}}]}}];\n  for (let i = 0; i < safe.length; i += 1900) {\n    blocks.push({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:safe.substring(i, i+1900)}}]}});\n  }\n  return blocks;\n}\nfunction h2(text) {\n  return {object:'block',type:'heading_2',heading_2:{rich_text:[{type:'text',text:{content:text}}]}};\n}\nfunction divider() { return {object:'block',type:'divider',divider:{}}; }\nfunction bullet(text) {\n  return {object:'block',type:'bulleted_list_item',bulleted_list_item:{rich_text:[{type:'text',text:{content:text.substring(0,2000)}}]}};\n}\nfunction para(text) {\n  return {object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:(text||'').substring(0,2000)}}]}};\n}\n\nconst highlights = Array.isArray(j.dream_highlights) ? j.dream_highlights.filter(h => h) : [];\nconst tips = Array.isArray(j.resume_tips) ? j.resume_tips.filter(t => t && t !== 'None') : [];\n\nconst children = [\n  {\n    object: 'block', type: 'callout',\n    callout: {\n      rich_text: [{type:'text',text:{content:`Dream Job — Score: ${j.score}/100  (Fit: ${j.candidate_fit}/50  |  Dream: ${j.dream_fit}/50)`}}],\n      icon: {emoji: '\\u2B50'},\n      color: 'yellow_background'\n    }\n  },\n  divider(),\n  h2('\\u2728 Dream Job Signals'),\n  ...(highlights.length > 0 ? highlights.map(h => bullet(h)) : [para('No specific dream signals noted.')]),\n  divider(),\n  h2('\\uD83D\\uDCCB Full Job Description'),\n  ...descBlocks(j.description),\n  divider(),\n  h2('\\uD83C\\uDFAF Resume Customization Tips'),\n  ...(tips.length > 0 ? tips.slice(0,8).map(t => bullet(t)) : [para('No specific tips generated.')]),\n  divider(),\n  h2('\\u2709\\uFE0F Cover Letter Hook'),\n  para(j.cover_letter_hook || 'Not generated.'),\n];\n\nconst tagsValue = (j.tags || []).slice(0, 10).map(t => ({name: String(t).substring(0,100)}));\nconst tipsShort = tips.slice(0,3).join(' | ').substring(0,500) || 'None';\nconst clShort = (j.cover_letter_hook || 'None').substring(0,500);\nconst highlightsShort = highlights.slice(0,3).join(' | ').substring(0,500) || 'None';\n\nconst body = {\n  parent: { database_id: routeDb(j) },\n  properties: {\n    \"Job Title\":          { title:        [{ text: { content: (j.title   || '').substring(0,200) } }] },\n    \"Company\":            { rich_text:    [{ text: { content: (j.company || '').substring(0,200) } }] },\n    \"Source\":             { select:       { name: j.source || 'JSearch' } },\n    \"Apply URL\":          { url: j.apply_url || null },\n    \"Location\":           { rich_text:    [{ text: { content: (j.location || '').substring(0,200) } }] },\n    \"Salary Min\":         { number: j.salary_min || null },\n    \"Salary Max\":         { number: j.salary_max || null },\n    \"Score\":              { number: j.score || 0 },\n    \"Fit Summary\":        { rich_text:    [{ text: { content: (j.fit_summary    || '').substring(0,2000) } }] },\n    \"Missing Skills\":     { rich_text:    [{ text: { content: (j.missing_skills || 'None').substring(0,500) } }] },\n    \"Red Flags\":          { rich_text:    [{ text: { content: (j.red_flags      || 'None').substring(0,500) } }] },\n    \"Tags\":               { multi_select: tagsValue },\n    \"Role Type\":          { select:       { name: j.role_type || 'Infrastructure Engineer' } },\n    \"Priority\":           { select:       { name: 'Dream' } },\n    \"Resume Tips\":        { rich_text:    [{ text: { content: tipsShort } }] },\n    \"Cover Letter Draft\": { rich_text:    [{ text: { content: clShort   } }] },\n    \"Status\":             { select:       { name: 'New' } },\n    \"Date Found\":         { date:         { start: today } },\n    \"Posted Date\":        { rich_text:    [{ text: { content: j.posted_date || '' } }] },\n    \"Job ID\":             { rich_text:    [{ text: { content: (j.job_id || '').substring(0,200) } }] },\n    \"Dream Job\":          { checkbox: true }\n  },\n  children: children\n};\n\nreturn [{ json: { ...j, notionBody: JSON.stringify(body) } }];\n"
+      },
+      "id": "d13a",
+      "name": "Prepare Notion Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notionBody }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "id": "d13",
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2688,
+        304
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\nconst today = new Date().toLocaleDateString('en-US',\n  {weekday:'long',year:'numeric',month:'long',day:'numeric'});\n\nfunction cleanUrl(url) {\n  try { return url.split('?')[0]; } catch(e) { return url; }\n}\n\nconst sorted = [...items].sort((a,b) => b.json.score - a.json.score);\n\n// —— Discord ——\nlet discord = `\\u2B50 **DREAM JOB ALERT** \\u2014 ${today}\\n`;\ndiscord += `Found **${items.length}** job${items.length === 1 ? '' : 's'} that clear the dream threshold\\n\\n`;\n\nfor (const item of sorted) {\n  const j = item.json;\n  const sal = j.salary_min\n    ? `$${Math.round(j.salary_min/1000)}k\\u2013$${Math.round((j.salary_max||j.salary_min)/1000)}k`\n    : (j.salary_text || 'Salary not listed');\n\n  discord += `**${j.score}/100** \\u2014 **${j.title}** @ **${j.company}**\\n`;\n  discord += `\\uD83D\\uDCB0 ${sal} \\u00B7 \\uD83C\\uDFAF Fit: ${j.candidate_fit}/50 \\u00B7 \\u2728 Dream: ${j.dream_fit}/50\\n`;\n  discord += `${j.fit_summary}\\n`;\n  if (j.dream_highlights && j.dream_highlights.length) {\n    discord += j.dream_highlights.slice(0,3).map(h => `\\u2705 ${h}`).join('\\n') + '\\n';\n  }\n  if (j.red_flags && j.red_flags !== 'None') {\n    discord += `\\uD83D\\UDEA9 ${j.red_flags}\\n`;\n  }\n  discord += `\\uD83D\\uDD17 ${cleanUrl(j.apply_url)}\\n\\n`;\n}\ndiscord += `\\uD83D\\uDCCB Full resume tips + cover letter hook in email & Notion`;\n\n// —— Email ——\nlet emailRows = '';\nfor (const item of sorted) {\n  const j = item.json;\n  const sal = j.salary_min\n    ? '$' + j.salary_min.toLocaleString() + (j.salary_max ? '\\u2013$' + j.salary_max.toLocaleString() : '+')\n    : (j.salary_text || 'Not listed');\n\n  const tagHtml = j.tags && j.tags.length\n    ? '<span style=\"margin-top:4px;display:block\">'\n      + j.tags.slice(0,6).map(t => `<span style=\"background:#fff3cd;color:#856404;padding:2px 6px;border-radius:10px;font-size:11px;margin-right:3px\">${t}</span>`).join('')\n      + '</span>'\n    : '';\n\n  const highlightHtml = j.dream_highlights && j.dream_highlights.length\n    ? '<ul style=\"margin:6px 0 4px 16px;padding:0;color:#155724;font-size:13px\">'\n      + j.dream_highlights.slice(0,4).map(h => `<li>${h}</li>`).join('')\n      + '</ul>'\n    : '';\n\n  const tipsHtml = j.resume_tips && j.resume_tips.length\n    ? '<div style=\"margin-top:8px\"><strong style=\"font-size:12px;color:#6c757d\">RESUME TIPS:</strong>'\n      + '<ul style=\"margin:4px 0 0 16px;padding:0;font-size:12px;color:#495057\">'\n      + j.resume_tips.slice(0,4).map(t => `<li>${t}</li>`).join('')\n      + '</ul></div>'\n    : '';\n\n  const hookHtml = j.cover_letter_hook\n    ? `<div style=\"margin-top:8px;padding:8px;background:#f8f9fa;border-left:3px solid #ffc107;font-size:13px;color:#495057\"><strong>Cover letter:</strong> ${j.cover_letter_hook}</div>`\n    : '';\n\n  emailRows += `<tr style=\"border-bottom:2px solid #ffc107\">`\n    + `<td style=\"padding:16px;vertical-align:top;width:70px;text-align:center\">`\n    + `<span style=\"background:#856404;color:#fff3cd;padding:6px 10px;border-radius:12px;font-weight:bold;font-size:16px\">${j.score}</span>`\n    + `<br><span style=\"font-size:11px;color:#aaa;margin-top:4px;display:block\">${j.candidate_fit}+${j.dream_fit}</span>`\n    + `<br><span style=\"font-size:10px;color:#aaa\">${j.source}</span></td>`\n    + `<td style=\"padding:16px\">`\n    + `<strong style=\"font-size:16px\"><a href=\"${j.apply_url}\" style=\"color:#212529;text-decoration:none\">${j.title}</a></strong>`\n    + ` <span style=\"font-size:12px;color:#6c757d\">@ ${j.company}</span><br>`\n    + `<span style=\"color:#888;font-size:13px\">${j.location}</span> &nbsp;|&nbsp; `\n    + `<span style=\"color:#198754;font-size:13px;font-weight:bold\">${sal}</span><br>`\n    + `<div style=\"margin:6px 0;font-size:14px;color:#343a40\">${j.fit_summary}</div>`\n    + tagHtml\n    + (highlightHtml ? `<div style=\"margin-top:6px\"><strong style=\"font-size:12px;color:#155724\">\\u2728 Dream signals:</strong>${highlightHtml}</div>` : '')\n    + (j.red_flags && j.red_flags !== 'None' ? `<div style=\"color:#dc3545;font-size:12px;margin-top:4px\">\\uD83D\\uDEA9 ${j.red_flags}</div>` : '')\n    + tipsHtml\n    + hookHtml\n    + `<div style=\"margin-top:6px\"><a href=\"${j.apply_url}\" style=\"color:#0d6efd;font-size:13px\">Apply \\u2192</a> &nbsp;|&nbsp; <span style=\"color:#aaa;font-size:12px\">Posted: ${j.posted_date||'Unknown'}</span></div>`\n    + '</td></tr>';\n}\n\nconst emailSubject = sorted.length === 1\n  ? `\\u2B50 Dream Job: ${sorted[0].json.title} @ ${sorted[0].json.company} (${sorted[0].json.score}/100)`\n  : `\\u2B50 ${sorted.length} Dream Jobs Found \\u2014 ${today}`;\n\nconst emailHtml = `<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;max-width:860px;margin:0 auto;color:#212529\">\n<div style=\"background:#ffc107;padding:16px 24px;border-radius:8px 8px 0 0\">\n  <h2 style=\"margin:0;color:#212529\">\\u2B50 Dream Job Alert \\u2014 ${today}</h2>\n  <p style=\"margin:4px 0 0;color:#343a40\">Found <strong>${sorted.length}</strong> job${sorted.length===1?'':'s'} that clear the 80+ dream threshold. <a href=\"https://www.notion.so/\" style=\"color:#212529\">View in Notion \\u2192</a></p>\n</div>\n<table style=\"width:100%;border-collapse:collapse;border:1px solid #ffc107\">\n<tbody>${emailRows}</tbody></table>\n<p style=\"margin-top:16px;color:#6c757d;font-size:12px\">\n  Dream threshold: 80+/100 \\u2014 scored on candidate fit (0\\u201350) + dream criteria (0\\u201350).\n  Daily scout runs at 7AM; Dream Scout at 8AM.\n</p>\n</body></html>`;\n\nreturn [{ json: {\n  discord_content: discord,\n  email_html:      emailHtml,\n  email_subject:   emailSubject,\n  has_jobs: true\n} }];\n"
+      },
+      "id": "d14",
+      "name": "Build Dream Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.discord_content }}"
+            },
+            {
+              "name": "username",
+              "value": "Dream Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d15",
+      "name": "Discord Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2688,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "you@example.com",
+        "toEmail": "you@example.com",
+        "subject": "={{ $json.email_subject }}",
+        "html": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "d17",
+      "name": "Send Gmail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2688,
+        832
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "",
+          "name": "Gmail SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://linkedin-job-search-api.p.rapidapi.com/active-jb-24h",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "title_filter",
+              "value": "\"staff infrastructure engineer\" OR \"principal infrastructure engineer\" OR \"staff platform engineer\" OR \"principal platform engineer\" OR \"lead platform engineer\" OR \"lead infrastructure engineer\" OR \"senior infrastructure engineer\" OR \"senior platform engineer\" OR \"senior systems engineer\" OR \"infrastructure architect\" OR \"platform architect\" OR \"principal engineer\""
+            },
+            {
+              "name": "location_filter",
+              "value": "\"United States\""
+            },
+            {
+              "name": "description_type",
+              "value": "text"
+            },
+            {
+              "name": "limit",
+              "value": "25"
+            },
+            {
+              "name": "offset",
+              "value": "0"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-rapidapi-key",
+              "value": "YOUR_RAPIDAPI_KEY"
+            },
+            {
+              "name": "x-rapidapi-host",
+              "value": "linkedin-job-search-api.p.rapidapi.com"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "dLinkedInSearch",
+      "name": "LinkedIn Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        1440
+      ],
+      "disabled": false
+    },
+    {
+      "id": "dMergeLinked",
+      "name": "Merge Linked",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1256,
+        700
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "aicost0a",
+      "name": "Build Cost Line",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        768
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "jsCode": "\n// Emit this call's token spend to InfluxDB. Runs as a side branch off the\n// Claude node so the pipeline is never gated on a cost write.\n// Pricing mirrors scripts/log-ai-cost.sh in the NOLA repo - USD per 1M tokens,\n// verified 2026-08-26.\nconst resp = $input.first().json;\nconst u = resp.usage || {};\n\nconst model        = resp.model || 'unknown';\nconst inputTokens  = u.input_tokens  || 0;\nconst outputTokens = u.output_tokens || 0;\n// Present only when the request used prompt caching.\nconst cacheRead    = u.cache_read_input_tokens     || 0;\nconst cacheWrite   = u.cache_creation_input_tokens || 0;\n\nlet inCpm, outCpm;\nif      (model.includes('haiku'))    { inCpm =  1.00; outCpm =  5.00; }\nelse if (model.includes('sonnet-5')) { inCpm =  2.00; outCpm = 10.00; }\nelse if (model.includes('sonnet'))   { inCpm =  3.00; outCpm = 15.00; }\nelse if (model.includes('opus'))     { inCpm =  5.00; outCpm = 25.00; }\nelse if (model.includes('fable'))    { inCpm = 10.00; outCpm = 50.00; }\nelse                                 { inCpm =  1.00; outCpm =  5.00; }\n\n// tokens * (USD per 1M) lands directly in micro-dollars, which keeps the field\n// an integer in InfluxDB. Cache reads bill at 0.1x input, writes at 1.25x (5m TTL).\nconst micro = Math.round(\n  inputTokens  * inCpm  +\n  outputTokens * outCpm +\n  cacheRead    * inCpm * 0.10 +\n  cacheWrite   * inCpm * 1.25\n);\n\nconst esc = s => String(s).replace(/[ ,=]/g, '\\\\$&');\n\nconst line =\n  `ai_cost,workflow=${esc('job-search-dream-scout')},model=${esc(model)} ` +\n  `input_tokens=${inputTokens}i,output_tokens=${outputTokens}i,` +\n  `cache_read_tokens=${cacheRead}i,cache_write_tokens=${cacheWrite}i,` +\n  `cost_microdollars=${micro}i ${Date.now() * 1000000}`;\n\nreturn [{ json: { line, model, micro } }];\n"
+      }
+    },
+    {
+      "id": "aicost0b",
+      "name": "Log AI Cost",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2016,
+        768
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "http://YOUR_INFLUXDB_HOST:8086/api/v2/write?org=YOUR_ORG&bucket=ai_cost&precision=ns",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.line }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "InfluxDB ai_cost writer"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 8AM": {
+      "main": [
+        [
+          {
+            "node": "JSearch - Platform/Infra",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - Polymath",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Adzuna Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remotive Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Indeed Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remote OK Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "The Muse Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "LinkedIn Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On Demand": {
+      "main": [
+        [
+          {
+            "node": "JSearch - Platform/Infra",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - Polymath",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Adzuna Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remotive Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Indeed Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remote OK Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "The Muse Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "LinkedIn Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSearch - Platform/Infra": {
+      "main": [
+        [
+          {
+            "node": "Merge AB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSearch - Polymath": {
+      "main": [
+        [
+          {
+            "node": "Merge AB",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Adzuna Search": {
+      "main": [
+        [
+          {
+            "node": "Merge CD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remotive Search": {
+      "main": [
+        [
+          {
+            "node": "Merge CD",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Indeed Search": {
+      "main": [
+        [
+          {
+            "node": "Merge EF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remote OK Search": {
+      "main": [
+        [
+          {
+            "node": "Merge EF",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "The Muse Search": {
+      "main": [
+        [
+          {
+            "node": "Merge EFG",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge AB": {
+      "main": [
+        [
+          {
+            "node": "Merge ABCD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge CD": {
+      "main": [
+        [
+          {
+            "node": "Merge ABCD",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge EF": {
+      "main": [
+        [
+          {
+            "node": "Merge EFG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge ABCD": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge EFG": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge All": {
+      "main": [
+        [
+          {
+            "node": "Merge Linked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize + Filter + Dedup": {
+      "main": [
+        [
+          {
+            "node": "Format Dream Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Dream Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude AI Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI Score": {
+      "main": [
+        [
+          {
+            "node": "Parse Dream Scores",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Cost Line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Dream Scores": {
+      "main": [
+        [
+          {
+            "node": "Has Dream Jobs?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Dream Jobs?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notion Body",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Dream Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Prepare Notion Body": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Dream Report": {
+      "main": [
+        [
+          {
+            "node": "Discord Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Search": {
+      "main": [
+        [
+          {
+            "node": "Merge Linked",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Linked": {
+      "main": [
+        [
+          {
+            "node": "Normalize + Filter + Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Cost Line": {
+      "main": [
+        [
+          {
+            "node": "Log AI Cost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

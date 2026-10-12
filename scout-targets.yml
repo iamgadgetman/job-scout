@@ -1,0 +1,174 @@
+# ATS Scout target list (example).
+#
+# The ATS Scout polls these company job boards directly instead of searching
+# aggregators. The runnable copy of this table is TARGETS in
+# src/ats_scout_src/build_target_list.js; keep the two in step.
+#
+# ats: greenhouse | lever | ashby | breezy | html | sitemap
+# token: the board slug. Check it by opening verify_url - a JSON "jobs" /
+#        "postings" array means the token is good.
+#
+# Record roles you have already been through under a target's `applied:` key:
+#   applied:
+#     - role: Senior Network Engineer   # or null for the whole company
+#       date: 2026-01
+#       outcome: declined               # rejected | declined | withdrawn | ghosted
+#       reopen_after: 2026-07           # the role comes back on its own after this
+# build_target_list.js compiles these into SUPPRESSIONS.
+
+profile:
+  min_salary: 120000
+  location: remote_us
+  exclude_requires_clearance: true
+  exclude_requires_drug_test: true
+titles:
+- Network Engineer
+- Network Reliability Engineer
+- Cloud Network Engineer
+- Infrastructure Engineer
+- Platform Engineer
+- Systems Engineer
+- Network Automation Engineer
+- Network Security Engineer
+- Network Architect
+- Firewall Engineer
+seniority_include:
+- senior
+- staff
+- principal
+- lead
+- iii
+- iv
+- '3'
+- '4'
+seniority_exclude:
+- intern
+- junior
+- associate
+- entry
+- apprentice
+- i
+- ii
+targets:
+- name: Tailscale
+  ats: greenhouse
+  token: tailscale
+  verify_url: https://boards-api.greenhouse.io/v1/boards/tailscale/jobs
+  priority: 1
+- name: Grafana Labs
+  ats: greenhouse
+  token: grafanalabs
+  verify_url: https://boards-api.greenhouse.io/v1/boards/grafanalabs/jobs
+  priority: 1
+- name: Cloudflare
+  ats: greenhouse
+  token: cloudflare
+  verify_url: https://boards-api.greenhouse.io/v1/boards/cloudflare/jobs
+  priority: 1
+- name: HAProxy Technologies
+  ats: html
+  verify_url: https://www.haproxy.com/company/careers
+  priority: 1
+- name: Fastly
+  ats: greenhouse
+  token: fastly
+  verify_url: https://boards-api.greenhouse.io/v1/boards/fastly/jobs
+  priority: 2
+- name: Equinix
+  ats: sitemap
+  token: equinix
+  verify_url: https://careers.equinix.com/sitemap.xml
+  priority: 2
+- name: GitLab
+  ats: greenhouse
+  token: gitlab
+  verify_url: https://boards-api.greenhouse.io/v1/boards/gitlab/jobs
+  priority: 2
+- name: WorkOS
+  ats: ashby
+  token: WorkOS
+  verify_url: https://api.ashbyhq.com/posting-api/job-board/WorkOS
+  priority: 2
+- name: Wealthfront
+  ats: lever
+  token: wealthfront
+  verify_url: https://api.lever.co/v0/postings/wealthfront?mode=json
+  priority: 3
+- name: Datadog
+  ats: greenhouse
+  token: datadog
+  verify_url: https://boards-api.greenhouse.io/v1/boards/datadog/jobs
+  priority: 2
+- name: Elastic
+  ats: greenhouse
+  token: elastic
+  verify_url: https://boards-api.greenhouse.io/v1/boards/elastic/jobs
+  priority: 3
+- name: NetBrain
+  ats: greenhouse
+  token: netbrain
+  verify_url: https://boards-api.greenhouse.io/v1/boards/netbrain/jobs
+  priority: 1
+- name: Vultr
+  ats: ashby
+  token: vultr
+  verify_url: https://api.ashbyhq.com/posting-api/job-board/vultr
+  priority: 1
+- name: Aviatrix
+  ats: greenhouse
+  token: aviatrix
+  verify_url: https://boards-api.greenhouse.io/v1/boards/aviatrix/jobs
+  priority: 1
+- name: Coinbase
+  ats: greenhouse
+  token: coinbase
+  verify_url: https://boards-api.greenhouse.io/v1/boards/coinbase/jobs
+  priority: 2
+- name: Cerebras
+  ats: ashby
+  token: cerebras
+  verify_url: https://api.ashbyhq.com/posting-api/job-board/cerebras
+  priority: 2
+- name: Vantage Point Solutions
+  ats: breezy
+  token: vantage-point-solutions-inc
+  verify_url: https://vantage-point-solutions-inc.breezy.hr/json
+  priority: 2
+
+ats_endpoints:
+  greenhouse: https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true
+  lever: https://api.lever.co/v0/postings/{token}?mode=json
+  ashby: https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true
+  breezy: https://{token}.breezy.hr/json
+filters:
+  reject_patterns:
+  - security clearance
+  - secret clearance
+  - top secret
+  - polygraph
+  - HSPD-12
+  - PIV credential
+  - public trust
+  - must be a US citizen due to
+  - drug screen
+  - drug test
+  - must reside in
+  - hybrid
+  - days per week onsite
+  - relocation required
+  require_any:
+  - remote
+  - distributed
+  - work from anywhere
+  range_top_min: 120000
+  single_figure_min: 100000
+  salary_unknown_action: keep
+output:
+  format: queue
+  cap_per_run: 25
+  sort:
+  - priority
+  - posted_date_desc
+  include_apply_url: true
+  track_applied: true
+  weekly_application_target: 5
