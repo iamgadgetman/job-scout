@@ -1,0 +1,1337 @@
+{
+  "name": "Job Application Doc Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "a1",
+      "name": "Poll Every 10 Min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -256,
+        304
+      ]
+    },
+    {
+      "id": "a2",
+      "name": "Query Applying Jobs",
+      "position": [
+        -48,
+        304
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const DBS = [\"YOUR_NOTION_DB_MAIN\", \"YOUR_NOTION_DB_CLOUD\", \"YOUR_NOTION_DB_SECURITY\"];\nconst TOKEN = \"YOUR_NOTION_TOKEN\";\nconst body = {\"filter\": {\"and\": [{\"property\": \"Status\", \"select\": {\"equals\": \"Applying\"}}, {\"property\": \"Drive Folder\", \"url\": {\"is_empty\": true}}, {\"property\": \"Score\", \"number\": {\"is_not_empty\": true}}]}};\nlet all = [];\nfor (const db of DBS) {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `https://api.notion.com/v1/databases/${db}/query`,\n    headers: { 'Authorization': `Bearer ${TOKEN}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },\n    body, json: true\n  });\n  if (resp && Array.isArray(resp.results)) all = all.concat(resp.results);\n}\nreturn [{ json: { results: all } }];"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst results = ($json.results || []);\nif (!results.length) return [];  // nothing to process — workflow stops cleanly\nreturn [{ json: results[0] }];   // process one at a time; next poll picks up the rest\n"
+      },
+      "id": "a3",
+      "name": "Check & Extract Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst page = $json;\nconst props = page.properties || {};\n\nconst title    = (props['Job Title']?.title?.[0]?.text?.content || 'Unknown Title').trim();\nconst company  = (props['Company']?.rich_text?.[0]?.text?.content || 'Unknown Company').trim();\nconst roleType = props['Role Type']?.select?.name || 'Other';\nconst tags     = (props['Tags']?.multi_select || []).map(t => t.name);\nconst applyUrl = props['Apply URL']?.url || '';\nconst score    = props['Score']?.number || 0;\nconst fitSummary = props['Fit Summary']?.rich_text?.[0]?.text?.content || '';\n\nfunction slugify(s, max) {\n  return s.replace(/[^\\w\\s-]/g, '').replace(/\\s+/g, ' ').trim().substring(0, max || 60);\n}\n\nconst docDate     = new Date().toISOString().split('T')[0];\nconst folderName  = slugify(`${company} - ${title}`, 80);\nconst resumeTitle = `Resume - ${slugify(title, 45)} - ${company.substring(0, 25)} ${docDate}`;\nconst clTitle     = `Cover Letter - ${slugify(title, 40)} - ${company.substring(0, 25)} ${docDate}`;\n\nreturn [{ json: {\n  page_id:      page.id,\n  title, company, role_type: roleType, tags, apply_url: applyUrl, score, fit_summary: fitSummary,\n  folder_name: folderName, resume_title: resumeTitle, cl_title: clTitle,\n}}];\n"
+      },
+      "id": "a4",
+      "name": "Extract Page Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.notion.com/v1/blocks/{{ $json.page_id }}/children?page_size=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "id": "a5",
+      "name": "Get Page Blocks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        304
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst blocks = $json.results || [];\nconst pageInfo = $('Extract Page Info').first().json;\n\nlet inDesc = false;\nconst parts = [];\n\nfor (const block of blocks) {\n  if (block.type === 'heading_2') {\n    const text = block.heading_2?.rich_text?.[0]?.text?.content || '';\n    if (text.includes('Full Job Description')) { inDesc = true; continue; }\n    if (inDesc) break;\n  }\n  if (block.type === 'divider' && inDesc) break;\n  if (inDesc && block.type === 'paragraph') {\n    const t = block.paragraph?.rich_text?.[0]?.text?.content || '';\n    if (t) parts.push(t);\n  }\n}\n\nconst description = parts.join('\\n').substring(0, 5000);\nreturn [{ json: { ...pageInfo, description } }];\n"
+      },
+      "id": "a6",
+      "name": "Extract Description",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $json;\nconst resumeText = $json.resumeText || 'ERROR: resumeText missing from Resume Content node';\n\nconst tagsList = (j.tags || []).join(', ') || 'Not specified';\nconst desc     = (j.description || 'No description provided').substring(0, 3500);\n\n// ── Cached prefix ─────────────────────────────────────────────────────────\n// Byte-identical on every run, so it can be cached. The only interpolation is\n// resumeText, which is a constant from the Resume Content node. NOTHING\n// job-specific may go in here - a single changed byte invalidates the entry\n// and every call pays the write premium instead of the read discount.\nconst systemText = `You are a professional resume writer helping a senior network/infrastructure engineer tailor application materials for a specific job opening.\n\nCANDIDATE BASE RESUME — USE THIS AS THE AUTHORITATIVE SOURCE:\n${resumeText}\n\nINSTRUCTIONS:\nTailor the candidate's resume for this specific role. Keep all factual claims accurate — do not invent experience or credentials. Reorder emphasis within roles to highlight skills this job values, but PRESERVE ALL CONTENT. Preserve all specific metrics (1,200 routers, 100 servers, 1,600 rules, 350 locations, etc.).\n\nINCLUDE A PROJECTS SECTION: Populate \"projects\" using the candidate's platform/automation projects from the base resume (e.g. NOLA — AI Infrastructure Assistant, Job Scout, Multi-Site Personal Infrastructure). Order by relevance to this role, keep 1–2 bullets each, and preserve specific tools and metrics.\n\nCRITICAL — ALL 6 WORK HISTORY ENTRIES ARE REQUIRED in the experience array, in this exact order:\n  1. [Current Employer] ([Year]–Present) — include 4–5 bullets, emphasize most relevant work\n  2. [Previous Employer] ([Year]–[Year]) — include 4–5 bullets\n  3. [Previous Employer] ([Year]–[Year]) — include 3–4 bullets\n  4. [Earlier Employer] ([Year]–[Year]) — include 2–3 bullets\nDO NOT drop, combine, skip, or merge any of these 6 entries. Every one must appear.\n\nReturn ONLY valid JSON with no markdown fences, no extra text:\n\n{\n  \"resume_sections\": {\n    \"summary\": \"2–3 sentence professional summary written specifically for this role at this company\",\n    \"core_competencies\": [\"12 competency phrases most relevant to this specific job — pick from the candidate's real skills, ordered by relevance to this role\"],\n    \"projects\": [\n      {\n        \"name\": \"project name from the base resume\",\n        \"tech\": \"short tech stack, e.g. n8n · Claude · Prometheus\",\n        \"bullets\": [\"1–2 concise bullets — preserve specific tools and metrics\"]\n      }\n    ],\n    \"experience\": [\n      {\n        \"company\": \"exact company name\",\n        \"title\": \"exact title held\",\n        \"dates\": \"date range\",\n        \"location\": \"city, state or Remote\",\n        \"bullets\": [\"achievement bullets rewritten to lead with skills this job values most — preserve all specific metrics\"]\n      }\n    ],\n    \"technical_skills\": \"Technical skills paragraph with technologies most relevant to this role listed first — preserve all skills from the base resume, reordered by relevance\",\n    \"education\": \"Bachelor of Applied Science, Information Security Systems | Your University\\nBachelor of Applied Science, Electronics/Communications Engineering Technology | Your University\\nAssociate of Applied Science, Computer/Electronics Engineering Technology | Your University\\nCertifications: CCNA (2011, 97%) | BICSI Cable Installation\"\n  },\n  \"cover_letter\": \"Full 3–4 paragraph cover letter.\\n\\nParagraph 1 (hook): Open with something specific about the target company named in the job details and why this role is a strong fit — reference the company's industry, mission, or something distinctive.\\n\\nParagraph 2 (proof): Highlight 2–3 most relevant experiences with specific metrics. Connect directly to requirements in the job description.\\n\\nParagraph 3 (value): Explain the specific value the candidate brings — what problems they have solved that map directly to what this company needs.\\n\\nParagraph 4 (close): Professional closing with enthusiasm and call to action.\"\n}`;\n\n// ── Volatile suffix ───────────────────────────────────────────────────────\n// Changes per job, so it sits after the cache breakpoint as the user turn.\nconst userText = `TARGET POSITION:\nTitle: ${j.title}\nCompany: ${j.company}\nRole Type: ${j.role_type}\nKey Skills Needed: ${tagsList}\n\nJOB DESCRIPTION:\n${desc}\n\n`;\n\nreturn [{ json: { ...j, systemText, userText } }];\n"
+      },
+      "id": "a7",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({model: \"claude-sonnet-4-6\", max_tokens: 12000, system: [{type: \"text\", text: $json.systemText, cache_control: {type: \"ephemeral\", ttl: \"1h\"} }], messages: [{role: \"user\", content: $json.userText}]}) }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi"
+      },
+      "id": "a8",
+      "name": "Claude Generate Docs",
+      "position": [
+        1552,
+        304
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic (Claude)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp = $input.first().json;\nconst j    = $('Build Prompt').first().json;\n\n// DEBUG: expose what resp actually contains\nconst respKeys   = Object.keys(resp);\nconst hasContent = Array.isArray(resp.content);\nconst hasChoices = Array.isArray(resp.choices);\nconst anthropicRaw = hasContent ? (resp.content[0] || {}).text || '' : '';\nconst openaiRaw    = hasChoices ? ((resp.choices[0] || {}).message || {}).content || '' : '';\nconst raw = anthropicRaw || openaiRaw || '';\n\nlet result = {};\ntry {\n  const BT = String.fromCharCode(96);\nconst BT3 = BT + BT + BT;\nconst cleaned = raw\n  .replace(new RegExp(BT3 + 'json\\s*', 'g'), '')\n  .replace(new RegExp(BT3 + '\\s*', 'g'), '')\n  .trim();\n  result = JSON.parse(cleaned);\n} catch(e) {\n  result = { resume_sections: null, cover_letter: raw || 'Parse failed.' };\n}\n\nconst s = result.resume_sections;\n\n// DEBUG: if still failing, surface detail in the resume doc\nconst debugInfo = [\n  'resp keys: ' + respKeys.join(', '),\n  'hasContent: ' + hasContent,\n  'hasChoices: ' + hasChoices,\n  'raw length: ' + raw.length,\n  'raw start:  ' + raw.substring(0,120),\n].join('\\n');\n\nconst DARK_BLUE = { color: { rgbColor: { red: 0.110, green: 0.239, blue: 0.376 } } };\nconst MED_GRAY  = { color: { rgbColor: { red: 0.40,  green: 0.40,  blue: 0.40  } } };\n\nlet resumeText    = '';\nlet docPos        = 1;\nconst fmtRequests = [];\n\nfunction addPart(text, textStyle, align) {\n  if (!text) return;\n  const start = docPos;\n  resumeText += text;\n  docPos += text.length;\n  const end = docPos;\n  if (textStyle) {\n    let styleEnd = end;\n    for (let i = text.length - 1; i >= 0 && text[i] === '\\n'; i--) styleEnd--;\n    if (styleEnd > start) {\n      const ts = {}, fields = [];\n      if (textStyle.bold      !== undefined) { ts.bold   = textStyle.bold;   fields.push('bold'); }\n      if (textStyle.italic    !== undefined) { ts.italic = textStyle.italic; fields.push('italic'); }\n      if (textStyle.fontSize  !== undefined) { ts.fontSize = { magnitude: textStyle.fontSize, unit: 'PT' }; fields.push('fontSize'); }\n      if (textStyle.foregroundColor) { ts.foregroundColor = textStyle.foregroundColor; fields.push('foregroundColor'); }\n      if (fields.length) fmtRequests.push({ updateTextStyle: { range: { startIndex: start, endIndex: styleEnd }, textStyle: ts, fields: fields.join(',') }});\n    }\n  }\n  if (align) fmtRequests.push({ updateParagraphStyle: { range: { startIndex: start, endIndex: end }, paragraphStyle: { alignment: align }, fields: 'alignment' }});\n}\n\nfunction sectionHeader(title) {\n  addPart(title + '\\n', { bold: true, fontSize: 11, foregroundColor: DARK_BLUE });\n}\n\nif (s) {\n  addPart('YOUR NAME\\n', { bold: true, fontSize: 18 }, 'CENTER');\n  addPart('Your City, WA  •  555.555.0100  •  you@example.com  •  yourwebsite.example\\n', { fontSize: 10 }, 'CENTER');\n  addPart('\\n');\n  addPart('Tailored for: ' + j.title + ' — ' + j.company + '\\n', { italic: true, fontSize: 9, foregroundColor: MED_GRAY }, 'CENTER');\n  addPart('\\n');\n  sectionHeader('PROFESSIONAL SUMMARY');\n  addPart((s.summary || '') + '\\n', { fontSize: 10 });\n  addPart('\\n');\n  sectionHeader('CORE COMPETENCIES');\n  addPart((s.core_competencies || []).join('  •  ') + '\\n', { fontSize: 10 });\n  addPart('\\n');\n  if (s.projects && s.projects.length) {\n    sectionHeader('TECHNICAL PROJECTS');\n    for (const proj of s.projects) {\n      const tech = proj.tech ? '  (' + proj.tech + ')' : '';\n      addPart((proj.name || '') + tech + '\\n', { bold: true, fontSize: 10 });\n      for (const bullet of (proj.bullets || [])) {\n        addPart('    •  ' + bullet + '\\n', { fontSize: 10 });\n      }\n    }\n    addPart('\\n');\n  }\n  sectionHeader('PROFESSIONAL EXPERIENCE');\n  for (const exp of (s.experience || [])) {\n    addPart((exp.company || '').toUpperCase() + '\\n', { bold: true, fontSize: 11 });\n    const loc = exp.location ? '  —  ' + exp.location : '';\n    addPart((exp.title || '') + loc + '  |  ' + (exp.dates || '') + '\\n', { italic: true, fontSize: 10 });\n    for (const bullet of (exp.bullets || [])) {\n      addPart('    •  ' + bullet + '\\n', { fontSize: 10 });\n    }\n    addPart('\\n');\n  }\n  sectionHeader('TECHNICAL SKILLS');\n  addPart((s.technical_skills || '') + '\\n', { fontSize: 10 });\n  addPart('\\n');\n  sectionHeader('EDUCATION & CERTIFICATIONS');\n  addPart((s.education || '') + '\\n', { fontSize: 10 });\n} else {\n  addPart('=== RESUME GENERATION DEBUG ===\\n', { bold: true, fontSize: 12 });\n  addPart(debugInfo + '\\n', { fontSize: 10 });\n  addPart('\\n=== RAW CLAUDE OUTPUT (first 2000 chars) ===\\n', { bold: true, fontSize: 10 });\n  addPart((raw || '(empty)').substring(0, 2000) + '\\n', { fontSize: 9 });\n}\n\nconst coverLetterText = [\n  j.company, 'Re: ' + j.title,\n  'Date: ' + new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }),\n  '', result.cover_letter || 'Cover letter generation failed.', '',\n  'Sincerely,', 'Your Name',\n  'you@example.com  |  555.555.0100  |  yourwebsite.example',\n].join('\\n');\n\nconst resumeBatchBody = JSON.stringify({ requests: [{ insertText: { location: { index: 1 }, text: resumeText } }, ...fmtRequests] });\nconst clBatchBody = JSON.stringify({ requests: [{ insertText: { location: { index: 1 }, text: coverLetterText } }] });\n\nreturn [{ json: { ...j, resume_text: resumeText, cover_letter_text: coverLetterText,\n  resume_batch_body: resumeBatchBody, cl_batch_body: clBatchBody } }];\n"
+      },
+      "id": "a9",
+      "name": "Parse Docs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://docs.googleapis.com/v1/documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({title: $json.resume_title}) }}",
+        "options": {}
+      },
+      "id": "a10",
+      "name": "Create Resume Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1984,
+        304
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Docs').first().json.resume_batch_body }}",
+        "options": {}
+      },
+      "id": "a11",
+      "name": "Insert Resume Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2208,
+        304
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://docs.googleapis.com/v1/documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({title: $('Parse Docs').first().json.cl_title}) }}",
+        "options": {}
+      },
+      "id": "a12",
+      "name": "Create Cover Letter Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2432,
+        304
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Docs').first().json.cl_batch_body }}",
+        "options": {}
+      },
+      "id": "a13",
+      "name": "Insert Cover Letter Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        304
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({name: $(\"Parse Docs\").first().json.folder_name, mimeType: \"application/vnd.google-apps.folder\", parents: [\"YOUR_DRIVE_FOLDER_ID\"]}) }}",
+        "options": {}
+      },
+      "id": "a14",
+      "name": "Create App Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2864,
+        304
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Resume Doc').first().json.documentId }}?addParents={{ $json.id }}&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{}",
+        "options": {}
+      },
+      "id": "a15",
+      "name": "Move Resume to Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3088,
+        304
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Cover Letter Doc').first().json.documentId }}?addParents={{ $('Create App Folder').first().json.id }}&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{}",
+        "options": {}
+      },
+      "id": "a16",
+      "name": "Move Cover Letter to Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3312,
+        304
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst d       = $('Parse Docs').first().json;\nconst resume  = $('Create Resume Doc').first().json;\nconst cl      = $('Create Cover Letter Doc').first().json;\nconst folder  = $('Create App Folder').first().json;\n\nconst folderId  = folder.id;\nconst folderUrl = 'https://drive.google.com/drive/folders/' + folderId;\nconst resumeUrl = 'https://docs.google.com/document/d/' + resume.documentId + '/edit';\nconst clUrl     = 'https://docs.google.com/document/d/' + cl.documentId + '/edit';\n\nconst discordMsg = [\n  '\\uD83D\\uDCC4 **Application docs ready!**',\n  `**${d.title}** @ ${d.company}`,\n  `Score: ${d.score}  \\u2022  ${d.role_type}`,\n  '',\n  `\\uD83D\\uDCC1 [Application Folder](${folderUrl})`,\n  `\\uD83D\\uDCDD [Tailored Resume](${resumeUrl})`,\n  `\\u2709\\uFE0F [Cover Letter](${clUrl})`,\n  '',\n  `Apply: ${d.apply_url || '(see Notion page)'}`,\n].join('\\n');\n\nreturn [{ json: {\n  page_id:      d.page_id,\n  discord_msg:  discordMsg,\n  notion_patch: JSON.stringify({\n    properties: {\n      'Status':       { select: { name: 'Docs Ready' } },\n      'Drive Folder': { url: folderUrl },\n    }\n  }),\n}}];\n"
+      },
+      "id": "a17",
+      "name": "Build Update Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.page_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notion_patch }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "id": "a18",
+      "name": "Update Notion Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3744,
+        304
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $('Build Update Data').first().json.discord_msg }}"
+            },
+            {
+              "name": "username",
+              "value": "Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a19",
+      "name": "Discord Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3968,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── PASTE INTO: \"Resume Content\" node of \"Job Application Doc Generator\" ──\n// on your-n8n.example.com. Replaces the entire node code.\n// Updated 2026-07-11: DevOps/Platform-first master resume (with full network\n// depth preserved so network-role tailoring still works).\n\nconst resumeText = `Your Name\nYour City, ST | 555.555.0100 | you@example.com | yourwebsite.example | github.com/your-handle\n\nPROFESSIONAL SUMMARY\n[Two or three sentences: years of experience, domains, the kind of role you want next.]\n\nTECHNICAL SKILLS\nRouting & Switching: [skills]\nSecurity: [skills]\nSystems & Virtualization: [skills]\nMonitoring & Automation: [skills]\n\nPROFESSIONAL EXPERIENCE\n[Title] | [Employer] — [City, ST] | [Year]–Present\n- [Achievement with a number in it]\n- [Achievement with a number in it]\n\n[Title] | [Employer] — [City, ST] | [Year]–[Year]\n- [Achievement with a number in it]\n\nEDUCATION & CERTIFICATIONS\n[Degree] | [School]\n[Certification] — [Year]`;\n\nreturn [{ json: { ...$json, resumeText } }];\n"
+      },
+      "id": "rc1",
+      "name": "Resume Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prevents double-processing if the 10-min poll fires while a job is mid-run.\n// Uses per-workflow static data (free, built-in, survives restarts).\nconst state = $getWorkflowStaticData('global');\nconst pageId = $json.id;\nconst inProgress = state.processing || {};\nconst staleAfterMs = 30 * 60 * 1000; // 30 min safety release\n\n// Clear stale locks first\nconst now = Date.now();\nfor (const [pid, ts] of Object.entries(inProgress)) {\n  if (now - ts > staleAfterMs) delete inProgress[pid];\n}\n\nif (inProgress[pageId]) {\n  return []; // already being processed — skip\n}\n\ninProgress[pageId] = now;\nstate.processing = inProgress;\n\nreturn [{ json: $json }];\n"
+      },
+      "id": "gd1",
+      "name": "Guard Duplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Release the processing lock for this page so future polls can re-process\n// if the job ever gets reset back to 'Applying' status.\nconst state = $getWorkflowStaticData('global');\nconst pageId = $('Guard Duplicate').first().json.id;\nconst inProgress = state.processing || {};\ndelete inProgress[pageId];\nstate.processing = inProgress;\nreturn [{ json: { cleared: pageId } }];\n"
+      },
+      "id": "cl1",
+      "name": "Clear Lock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        304
+      ]
+    },
+    {
+      "id": "aicost0a",
+      "name": "Build Cost Line",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        544
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "jsCode": "\n// Emit this call's token spend to InfluxDB. Runs as a side branch off the\n// Claude node so the pipeline is never gated on a cost write.\n// Pricing mirrors scripts/log-ai-cost.sh in the NOLA repo - USD per 1M tokens,\n// verified 2026-08-26.\nconst resp = $input.first().json;\nconst u = resp.usage || {};\n\nconst model        = resp.model || 'unknown';\nconst inputTokens  = u.input_tokens  || 0;\nconst outputTokens = u.output_tokens || 0;\n// Present only when the request used prompt caching.\nconst cacheRead    = u.cache_read_input_tokens     || 0;\nconst cacheWrite   = u.cache_creation_input_tokens || 0;\n\nlet inCpm, outCpm;\nif      (model.includes('haiku'))    { inCpm =  1.00; outCpm =  5.00; }\nelse if (model.includes('sonnet-5')) { inCpm =  2.00; outCpm = 10.00; }\nelse if (model.includes('sonnet'))   { inCpm =  3.00; outCpm = 15.00; }\nelse if (model.includes('opus'))     { inCpm =  5.00; outCpm = 25.00; }\nelse if (model.includes('fable'))    { inCpm = 10.00; outCpm = 50.00; }\nelse                                 { inCpm =  1.00; outCpm =  5.00; }\n\n// tokens * (USD per 1M) lands directly in micro-dollars, which keeps the field\n// an integer in InfluxDB. Cache reads bill at 0.1x input. This workflow caches\n// with ttl=1h, whose write premium is 2x - NOT the 1.25x of the 5m default.\n// The response does not report which TTL was used, so it is pinned here.\nconst micro = Math.round(\n  inputTokens  * inCpm  +\n  outputTokens * outCpm +\n  cacheRead    * inCpm * 0.10 +\n  cacheWrite   * inCpm * 2.00\n);\n\nconst esc = s => String(s).replace(/[ ,=]/g, '\\\\$&');\n\nconst line =\n  `ai_cost,workflow=${esc('job-application-doc-generator')},model=${esc(model)} ` +\n  `input_tokens=${inputTokens}i,output_tokens=${outputTokens}i,` +\n  `cache_read_tokens=${cacheRead}i,cache_write_tokens=${cacheWrite}i,` +\n  `cost_microdollars=${micro}i ${Date.now() * 1000000}`;\n\nreturn [{ json: { line, model, micro } }];\n"
+      }
+    },
+    {
+      "id": "aicost0b",
+      "name": "Log AI Cost",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        544
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "http://YOUR_INFLUXDB_HOST:8086/api/v2/write?org=YOUR_ORG&bucket=ai_cost&precision=ns",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.line }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "InfluxDB ai_cost writer"
+        }
+      }
+    },
+    {
+      "id": "sc1",
+      "name": "Build Score Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        800
+      ],
+      "parameters": {
+        "jsCode": "// Fan out one item per Notion board so a single credentialed HTTP node can\n// query all three. A Code node cannot use n8n credentials - that is why the\n// legacy \"Query Applying Jobs\" node hardcodes a Notion token. This branch\n// does not, and must not.\n//\n// Deliberately NOT a Merge: n8n Merge v3 silently ignores input ports past\n// idx 1, which has cost this pipeline a 10-day silent outage before.\nconst DBS = [\n  { db_id: 'YOUR_NOTION_DB_MAIN', board: 'Jobs' },\n  { db_id: 'YOUR_NOTION_DB_CLOUD', board: 'Cloud Networking' },\n  { db_id: 'YOUR_NOTION_DB_SECURITY', board: 'Network Security' },\n];\n\nreturn DBS.map(d => ({ json: d }));\n"
+      }
+    },
+    {
+      "id": "sc2",
+      "name": "Query Score Me",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        176,
+        800
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $json.db_id }}/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{\"filter\": {\"and\": [{\"property\": \"Score\", \"number\": {\"is_empty\": true}}, {\"or\": [{\"property\": \"Status\", \"select\": {\"equals\": \"Score Me\"}}, {\"property\": \"Status\", \"select\": {\"equals\": \"Applying\"}}]}]}, \"page_size\": 25}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      }
+    },
+    {
+      "id": "sc3",
+      "name": "Pick One Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        800
+      ],
+      "parameters": {
+        "jsCode": "// The three board queries land here as three separate items. Flatten them,\n// then take a single page per poll - the same one-at-a-time discipline the\n// docs branch uses. It keeps Notion under its ~3 req/s limit and keeps every\n// Claude call scoped to one job.\nconst pages = [];\nfor (const item of $input.all()) {\n  const r = item.json.results;\n  if (Array.isArray(r)) pages.push(...r);\n}\nif (!pages.length) return [];   // nothing queued - branch stops cleanly\n\n// Same static-data lock the docs branch uses, under its own key so the two\n// can never collide.\nconst state = $getWorkflowStaticData('global');\nconst now = Date.now();\nconst STALE_MS = 30 * 60 * 1000;   // safety release if a run dies mid-flight\n\nconst locks = state.scoring || {};\nfor (const [pid, ts] of Object.entries(locks)) {\n  if (now - ts > STALE_MS) delete locks[pid];\n}\n\nconst page = pages.find(p => !locks[p.id]);\nif (!page) { state.scoring = locks; return []; }\n\nlocks[page.id] = now;\nstate.scoring = locks;\n\nreturn [{ json: page }];\n"
+      }
+    },
+    {
+      "id": "sc4",
+      "name": "Get JD Blocks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        624,
+        800
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "=https://api.notion.com/v1/blocks/{{ $json.id }}/children?page_size=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      }
+    },
+    {
+      "id": "sc5",
+      "name": "Resolve Description",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        800
+      ],
+      "parameters": {
+        "jsCode": "// Decide what text we will score against, and pull whatever the row already\n// has so Parse Score knows which cells are blank and safe to fill.\nconst page   = $('Pick One Page').first().json;\nconst props  = page.properties || {};\nconst blocks = $json.results || [];\n\nconst rt  = p => (p && p.rich_text && p.rich_text[0] && p.rich_text[0].text\n                    ? p.rich_text[0].text.content : '').trim();\nconst sel = p => (p && p.select ? p.select.name : '') || '';\n\nconst title    = (props['Job Title'] && props['Job Title'].title\n                  && props['Job Title'].title[0] && props['Job Title'].title[0].text\n                  ? props['Job Title'].title[0].text.content : '').trim();\nconst company  = rt(props['Company']);\nconst location = rt(props['Location']);\nconst applyUrl = (props['Apply URL'] && props['Apply URL'].url) || '';\n\n// Any prose already sitting on the page. If he pasted the job description in\n// by hand, use that and skip the scrape entirely - Jina returns navigation\n// junk for Workday/LinkedIn postings behind a login, so a hand-paste is the\n// reliable escape hatch when scraping fails.\nconst parts = [];\nfor (const b of blocks) {\n  const rich = b[b.type] && b[b.type].rich_text;\n  if (Array.isArray(rich) && rich.length) {\n    const s = rich.map(x => x.plain_text || (x.text && x.text.content) || '').join('');\n    if (s.trim()) parts.push(s.trim());\n  }\n}\nconst pasted = parts.join('\\n').trim();\n\nconst MIN_USABLE = 400;              // shorter than this is a note, not a JD\nconst usePasted  = pasted.length >= MIN_USABLE;\n\nreturn [{ json: {\n  page_id:  page.id,\n  db_id:    (page.parent && page.parent.database_id) || '',\n  page_url: page.url || '',\n  // Which cells are already populated - Parse Score fills only the blanks so\n  // anything typed by hand wins over anything Claude infers.\n  title, company, location, apply_url: applyUrl,\n  // Which status triggered this. \"Applying\" means he wants documents, so\n  // Parse Score must hand the row back as \"Applying\", not \"New\", or the docs\n  // branch would never see it.\n  origin_status:   sel(props['Status']),\n  has_source:      !!sel(props['Source']),\n  has_date_found:  !!(props['Date Found'] && props['Date Found'].date),\n  pasted_description: usePasted ? pasted.substring(0, 6000) : '',\n  needs_fetch: !usePasted && !!applyUrl,\n}}];\n"
+      }
+    },
+    {
+      "id": "sc6",
+      "name": "Needs Fetch?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1072,
+        800
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "needs-fetch",
+              "leftValue": "={{ $json.needs_fetch }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "sc7",
+      "name": "Fetch JD via Jina",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1296,
+        688
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "=https://r.jina.ai/{{ $json.apply_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "text/plain"
+            },
+            {
+              "name": "X-No-Cache",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "sc8",
+      "name": "Build Score Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        800
+      ],
+      "parameters": {
+        "jsCode": "// Single-job scoring prompt. The rubric below is a verbatim port of the ATS\n// Scout's format_prompt.js so a hand-added job lands on the SAME 0-100 scale\n// as a scouted one - that comparability is the whole point of the column.\n// If you change the rubric in one place, change it in the other.\nconst d = $('Resolve Description').first().json;\n\n// On the fetch path Jina feeds this node; on the pasted path Resolve\n// Description feeds it directly. Take whichever actually carries text.\nlet scraped = '';\nif (!d.pasted_description) {\n  const raw = $json.data !== undefined ? $json.data : $json.body;\n  if (typeof raw === 'string') scraped = raw;\n}\n\nlet content = d.pasted_description || scraped || '';\n\n// Same boilerplate trim the Apply From URL path uses.\nconst simIdx = content.search(/#{2,3}\\s*Similar jobs/i);\nif (simIdx > 0) content = content.substring(0, simIdx);\nconst h1idx = content.search(/\\n#\\s+/);\nif (h1idx > 200) content = content.substring(h1idx);\ncontent = content.substring(0, 6000).trim();\n\nconst haveDesc = content.length >= 200;\nconst description = haveDesc\n  ? content\n  : 'No job description could be retrieved for this posting.';\n\n// ── Title tier + skill overlap (2026-10-04) ─────────────────────────────\n// Same block as ats_scout_src/normalize_ats.js and the Daily Scout's Normalize\n// node - change all three together, or a hand-added job and a scouted one\n// stop landing on the same scale.\n// Whole word, plural allowed: 'firewall' counts 'firewalls', 'java' skips JavaScript.\nconst kwHit = (txt, k) => new RegExp('(^|[^a-z0-9])' + k.replace(/[.*+?^${}()|[\\]\\\\/]/g, '\\\\$&') + '(e?s)?([^a-z0-9]|$)').test(txt);\nconst PRIMARY_T = /\\bnetwork\\b.*\\b(engineer|architect|administrator|analyst|specialist)\\b|\\bfirewall engineer|\\bwireless engineer|\\bnoc engineer/;\nconst SECONDARY_T = /\\binfrastructure\\b.*\\b(engineer|architect|administrator)\\b|\\binfrastructure operations|\\bsystems? (engineer|administrator)|\\bsysadmin|\\bvirtualization|\\bvmware|\\bserver (engineer|administrator)|\\bdata center engineer|\\bcloud engineer|\\bhybrid cloud/;\nconst SKILLS = {\n  network:  ['bgp','ospf','mpls','dmvpn','vlan','qos','spanning tree','stp','multicast',\n             'cisco','nexus','nx-os','ios-xe','juniper','junos','mist','aruba','meraki',\n             'sd-wan','sdwan','routing','switching','wireless','wlc','dns','dhcp','ipam',\n             'vpn','wan','lan','load balanc','f5'],\n  security: ['palo alto','fortinet','fortigate','checkpoint','check point','asa',\n             'firewall','intrusion prevention','ips','radius','zero trust','cloudflare',\n             'pci','802.1x','nac','ise','segmentation'],\n  systems:  ['vmware','vsphere','esxi','proxmox','hyper-v','virtualization','linux',\n             'red hat','rhel','centos','windows server','active directory','docker',\n             'kubernetes','k8s','container','backup','disaster recovery','azure','aws'],\n  observability: ['solarwinds','orion','prometheus','grafana','splunk','elastic','syslog',\n             'snmp','netflow','monitoring','loki','observability'],\n  automation: ['ansible','python','n8n','automation','scripting','api'],\n};\nconst DEVOPS_SIG = ['ci/cd','cicd','jenkins','github actions','gitlab ci','argocd','argo cd',\n  'helm','slo','error budget','sre','site reliability','devops','microservices','golang',\n  'rust','java','spring boot','software development','release engineering','build pipeline'];\nconst __t = String(d.title || '').toLowerCase();\nconst title_tier = !d.title ? 'unknown (no title on the row)'\n  : PRIMARY_T.test(__t) ? 'primary' : SECONDARY_T.test(__t) ? 'secondary' : 'other';\nconst __txt = (String(d.title || '') + ' ' + (haveDesc ? description.substring(0, 3000) : '')).toLowerCase();\nconst __by = {};\nlet __hits = 0;\nfor (const [cl, kws] of Object.entries(SKILLS)) {\n  __by[cl] = kws.filter(k => kwHit(__txt, k)).length;\n  __hits += __by[cl];\n}\nconst __dev = DEVOPS_SIG.filter(k => kwHit(__txt, k)).length;\nconst skill_overlap = haveDesc\n  ? Math.max(0, Math.min(100, Math.round(__hits * 100 / 12) - __dev * 8)) : null;\nconst skill_clusters = Object.entries(__by).filter(([, n]) => n).sort((a, b) => b[1] - a[1])\n  .map(([cl, n]) => `${cl} ${n}`).join(', ') + (__dev ? `; devops signals ${__dev}` : '');\n\nconst known = [\n  d.title    ? `Title (from the Notion row): \"${d.title}\"`       : 'Title: not filled in',\n  d.company  ? `Company (from the Notion row): \"${d.company}\"`   : 'Company: not filled in',\n  d.location ? `Location (from the Notion row): \"${d.location}\"` : 'Location: not filled in',\n  d.apply_url ? `Posting URL: ${d.apply_url}`                    : 'Posting URL: none given',\n  `Title tier: ${title_tier} | Skill overlap: ${skill_overlap === null ? 'unknown (no description)' : skill_overlap + '/100'}`\n    + (skill_clusters ? ` (${skill_clusters})` : ''),\n].join('\\n');\n\nconst prompt = `You are an expert technical recruiter and career coach acting as a strict job-match scorer for a specific candidate. Analyze this ONE job and return structured JSON.\n\nCANDIDATE PROFILE — Your Name\n- Location: Remote strongly preferred. Hybrid/onsite acceptable ONLY in Your City or the Metro Area (Nearby City A/B/C), ST. Remote-Only City counts ONLY if the role is remote. Onsite/hybrid anywhere else, or relocation, is a dealbreaker. Max 10% travel.\n- Experience: [N] years in [networking / security / infrastructure] — NOT a software developer\n- Current Role: [Title], [Employer] ([year]–present)\n  • [Scope: number of sites, users, devices]\n  • [Key platform or responsibility]\n  • [Current project]\n\n- STRONG / EXPERT skills:\n  • Routing: [e.g. BGP, OSPF, MPLS]\n  • Switching: [e.g. VLANs, QoS, vendor platforms]\n  • Wireless: [platforms]\n  • Firewalls: [vendors — config, rule lifecycle, hardening]\n  • Monitoring: [e.g. Prometheus, Grafana, SolarWinds]\n  • Systems: [OSes, hypervisors, containers]\n  • Automation: [tools — and how deep]\n  • Vendors: [list]\n\n- LIMITED / DEVELOPING:\n  • [Skill]: [honest depth — conceptual only / end-user / in training]\n  • [Skill]: [honest depth]\n\n- Certifications: [certs and degrees]\n- Salary: target ~$[N]k — a posted range that reaches $[N]k at either end is on target. More is welcome.\n- Hard dealbreakers: [e.g. onsite outside your area, relocation, clearance, drug testing, travel >10%]\n- Employer size: [preference, e.g. prefers organizations under 10,000 employees — soft flag]\n\nABOUT THIS ONE — read carefully, it differs from the scouted feed:\n- This job was added BY HAND by the candidate, which means he already has some\n  interest in it. Do not treat an unfamiliar company or an unknown source as a\n  negative signal on its own.\n- It is still scored on exactly the same rubric as the automated feed. Do NOT\n  inflate the score because he picked it himself — an honest number is the\n  entire reason this column exists.\n- If the description below says none could be retrieved, score on title,\n  company and location alone, CAP THE SCORE AT 75 because the evidence is\n  thin, and say plainly in fit_summary that the description was unavailable.\n\nTARGET ROLES (good fit):\nPRIMARY: Network Engineer (senior), Network Reliability Engineer, Cloud Network Engineer,\nNetwork Automation Engineer, Network Security Engineer, Network Architect.\nSECONDARY: Infrastructure Engineer, Systems Engineer, Systems Administrator (senior), Platform Engineer (ops-heavy).\nGROWTH DIRECTION: he wants to move beyond pure networking into server, virtualization, cloud and\ncontainer work (VMware, Proxmox, Docker, Kubernetes) — a network role that adds those is ideal.\nESPECIALLY desirable: roles centred on networking, routing, observability/monitoring, or\nthat blend infrastructure with AI/automation.\n\nNOT A FIT FOR:\nSoftware engineering, web/application development, data engineering, ML/AI engineering,\nsales/solutions engineering, or any role where writing production code is the PRIMARY\nresponsibility.\nSite Reliability Engineer (SRE), Production Engineer and DevOps roles — he does NOT qualify for these.\nScore any role that is SRE/DevOps in substance (on-call for software services, SLOs/error budgets,\nCI/CD pipelines as the core job) at 40 or below, whatever its title.\n\nWHAT THE NOTION ROW ALREADY SAYS:\n${known}\n\nJOB DESCRIPTION:\n${description}\n\nSCORING RULES — apply strictly:\n\nAUTOMATIC DISQUALIFIERS (score 20 or below):\n- Role is primarily software/application/web development\n- Requires 3+ years of programming as the primary skill (Go/Rust/Java as the main job function)\n- Requires clearance or drug testing\n- Onsite/hybrid outside Your City / Metro Area (onsite Remote-Only City included), or requires relocation\n- Federal government agency or federal contractor role (DOE/DoD/national-lab work, regional federal contractors)\n- Remote but restricted to a country other than the US\n\nPENALTIES:\n- Minus 25: heavy coding requirements (\"you will build software\", Go/Rust/Java required)\n- Minus 25: posted salary range tops out below $120k USD\n- Minus 15: requires a CS degree or software engineering background specifically\n- Minus 10: scripting/automation required (Python OK as secondary — note as a gap)\n- Minus 10: Skill overlap below 20 (little of his stack appears in the posting)\n- Minus 8: employer very likely exceeds 10,000 employees (estimate if unstated; note in red_flags)\n\nBONUSES:\n- Plus 12: networking is central to the role (BGP/routing/anycast/edge/peering)\n- Plus 10: Title tier primary (Network Engineer family); Plus 5: Title tier secondary (Infrastructure/Systems)\n- Plus 10: Skill overlap 60 or higher; Plus 5: Skill overlap 40-59\n- Plus 5: networking role that also involves virtualization/containers/cloud (VMware, Proxmox, Docker, Kubernetes) — his growth direction\n- Plus 10: network reliability/operations focus — routing observability, firewall automation\n- Plus 8: mentions Cisco/Juniper/Palo Alto/Fortinet or specific network protocols\n- Plus 8: role blends networking/infrastructure with AI/ML ops or values AI-driven automation\n- Plus 5: Grafana/Prometheus/observability stack prominent in requirements\n- Plus 5: ops-heavy infrastructure/platform role rather than dev-heavy\n- Plus 5: PCI-DSS or compliance-focused network security\n\nReturn ONLY a valid JSON object — no markdown fences, no extra text:\n{\n  \"score\": 85,\n  \"fit_summary\": \"Exactly two sentences explaining match quality and key alignment.\",\n  \"missing_skills\": \"comma-separated required skills not in profile, or None\",\n  \"red_flags\": \"salary below target, travel, clearance, heavy coding, large employer — or None\",\n  \"tags\": [\"BGP\", \"Palo Alto\", \"Kubernetes\", \"Grafana\"],\n  \"role_type\": \"Network Engineer\",\n  \"resume_tips\": [\n    \"Emphasize BGP/MPLS experience in the summary\",\n    \"Lead with Docker/Kubernetes hands-on work\",\n    \"Add Ansible learning progress to skills\"\n  ],\n  \"cover_letter_hook\": \"Two to three sentences opening a cover letter, specific to this company and role.\",\n  \"extracted\": {\n    \"title\": \"the job title exactly as the posting states it, or null if unknown\",\n    \"company\": \"the hiring company, or null if unknown\",\n    \"location\": \"location as stated, e.g. Remote (US) or Seattle, WA (Hybrid), or null\",\n    \"salary_min\": 140000,\n    \"salary_max\": 170000,\n    \"posted_date\": \"date the posting states it went live, as written, or null\",\n    \"is_remote\": true\n  }\n}\n\nScoring guide: 90-100=perfect fit, 80-89=strong match, 65-79=good candidate, 50-64=stretch, <50=poor fit.\nrole_type must be one of: SRE, Network Engineer, DevOps, Platform Engineer, Cloud Engineer, Infrastructure Engineer, Other\ntags: up to 8 technology/skill tags taken from the job description\nresume_tips: 3-5 specific bullets referencing his actual network/infra experience — include confirmed skills not yet on the resume (Meraki, Avaya VoIP, OSPF/MPLS, PCI-DSS, Palo Alto, Fortinet, n8n/Claude AI automation, SolarWinds/Elasticsearch) where they fit\ncover_letter_hook: reference the company or role specifically, never generic\nextracted: pull these from the DESCRIPTION. Use null — never a guess — for anything the posting does not state. salary_min/salary_max must be plain USD integers with no symbols or separators, or null. If salary is quoted in another currency, convert to USD roughly and note the original currency in red_flags.`;\n\n// Pre-build the Anthropic request body here rather than as an inline\n// expression. An n8n expression containing an adjacent \"}}\" terminates early\n// and the node dies with a bare \"invalid syntax\" - this sidesteps it entirely.\nconst claude_body = JSON.stringify({\n  model: 'claude-sonnet-4-6',\n  max_tokens: 2000,\n  messages: [{ role: 'user', content: prompt }],\n});\n\nreturn [{ json: { ...d, description_used: description, have_description: haveDesc, claude_body } }];\n"
+      }
+    },
+    {
+      "id": "sc9",
+      "name": "Claude Score Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1744,
+        800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.claude_body }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi"
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic (Claude)"
+        }
+      }
+    },
+    {
+      "id": "sc10",
+      "name": "Parse Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        800
+      ],
+      "parameters": {
+        "jsCode": "// Turn Claude's verdict into a Notion PATCH. Two bodies are pre-built as\n// strings so the HTTP nodes carry no inline expressions (the \"}}\" trap).\nconst resp = $input.first().json;\nconst d    = $('Build Score Prompt').first().json;\n\nconst raw = (resp.content && resp.content[0] && resp.content[0].text) || '';\n\nlet r = null;\ntry {\n  const BT = String.fromCharCode(96);\n  let cleaned = raw.replace(new RegExp(BT + BT + BT + '(json)?', 'g'), '').trim();\n  const s = cleaned.indexOf('{');\n  const e = cleaned.lastIndexOf('}');\n  if (s >= 0 && e > s) cleaned = cleaned.substring(s, e + 1);\n  r = JSON.parse(cleaned);\n} catch (e) { r = null; }\n\nconst today = new Date().toISOString().split('T')[0];\nconst props = {};\n\n// ── Failure path ───────────────────────────────────────────────────────────\n// Never leave the row with an empty Score in a status the filter matches: it\n// would be re-selected every 10 minutes and bill a Sonnet call each time.\n// Moving Status to \"Score Failed\" breaks the filter and stops the loop. This\n// does interrupt an \"Applying\" request on purpose - generating a tailored\n// resume against a job description we failed to read is worse than stopping.\nif (!r || typeof r.score !== 'number') {\n  props['Status']    = { select: { name: 'Score Failed' } };\n  props['Red Flags'] = { rich_text: [{ text: { content:\n    ('Scoring failed - Claude returned no usable JSON. First 300 chars: ' +\n     (raw || '(empty response)').substring(0, 300)).substring(0, 500) } }] };\n\n  return [{ json: {\n    page_id: d.page_id,\n    ok: false,\n    score: null,\n    props_patch: JSON.stringify({ properties: props }),\n    // Still a valid body: the append node runs unconditionally, so leaving a\n    // note on the page beats failing the node and losing the reason.\n    blocks_body: JSON.stringify({ children: [{ object: 'block', type: 'callout',\n      callout: { icon: { emoji: '\\u26A0\\uFE0F' }, rich_text: [{ type: 'text', text: { content:\n        ('Automatic scoring failed. Claude returned no usable JSON. Paste the job ' +\n         'description into this page and set Status back to \"Score Me\" to retry.')\n        .substring(0, 1900) } }] } }] }),\n    discord_msg: [\n      ':warning: **Scoring failed** - manual job left for review',\n      '**' + (d.title || '(untitled row)') + '**' + (d.company ? ' @ ' + d.company : ''),\n      d.page_url || '',\n    ].filter(Boolean).join('\\n'),\n  }}];\n}\n\n// ── Success path ───────────────────────────────────────────────────────────\nconst score = Math.max(0, Math.min(100, Math.round(r.score)));\nconst ex    = r.extracted || {};\nconst tips  = Array.isArray(r.resume_tips) ? r.resume_tips.filter(t => t && t !== 'None') : [];\n\nconst txt = (v, max) => ({ rich_text: [{ text: { content: String(v == null ? '' : v).substring(0, max) } }] });\nconst num = v => (typeof v === 'number' && isFinite(v) ? v : null);\n\n// Analysis columns - always written, this is what the run is for.\nprops['Score']              = { number: score };\nprops['Priority']           = { select: { name: score >= 80 ? 'High' : score >= 60 ? 'Medium' : 'Low' } };\nprops['Fit Summary']        = txt(r.fit_summary, 2000);\nprops['Missing Skills']     = txt(r.missing_skills || 'None', 500);\nprops['Red Flags']          = txt(r.red_flags || 'None', 500);\nprops['Resume Tips']        = txt(tips.slice(0, 3).join(' | ') || 'None', 500);\nprops['Cover Letter Draft'] = txt(r.cover_letter_hook || 'None', 500);\nprops['Role Type']          = { select: { name: r.role_type || 'Other' } };\nprops['Tags']               = { multi_select: (r.tags || []).slice(0, 10)\n                                  .map(t => ({ name: String(t).substring(0, 100) })) };\n// Hand back to whichever flow he asked for. A row he set to \"Applying\" stays\n// \"Applying\" so the docs branch picks it up on the next poll now that Score is\n// populated; a \"Score Me\" row lands in \"New\" for review.\nprops['Status']             = { select: { name: d.origin_status === 'Applying' ? 'Applying' : 'New' } };\n\n// Descriptive columns - only fill what he left blank, so anything typed by\n// hand always beats anything Claude inferred.\nif (!d.title    && ex.title)    props['Job Title'] = { title: [{ text: { content: String(ex.title).substring(0, 200) } }] };\nif (!d.company  && ex.company)  props['Company']   = txt(ex.company, 200);\nif (!d.location && ex.location) props['Location']  = txt(ex.location, 200);\nif (!d.has_source)              props['Source']    = { select: { name: 'Manual' } };\nif (!d.has_date_found)          props['Date Found'] = { date: { start: today } };\nif (num(ex.salary_min) !== null) props['Salary Min'] = { number: num(ex.salary_min) };\nif (num(ex.salary_max) !== null) props['Salary Max'] = { number: num(ex.salary_max) };\nif (ex.posted_date)              props['Posted Date'] = txt(ex.posted_date, 200);\n\n// ── Page body ──────────────────────────────────────────────────────────────\n// The \"Full Job Description\" heading is load-bearing: the docs branch's\n// Extract Description node scans for exactly that string, and without it a\n// tailored resume gets generated against an empty JD.\nconst para = t => ({ object: 'block', type: 'paragraph',\n  paragraph: { rich_text: [{ type: 'text', text: { content: String(t || '').substring(0, 1900) } }] } });\nconst h2 = t => ({ object: 'block', type: 'heading_2',\n  heading_2: { rich_text: [{ type: 'text', text: { content: t } }] } });\nconst bullet = t => ({ object: 'block', type: 'bulleted_list_item',\n  bulleted_list_item: { rich_text: [{ type: 'text', text: { content: String(t).substring(0, 1900) } }] } });\n\nconst descChunks = [];\nif (d.have_description) {\n  const safe = String(d.description_used).substring(0, 9500);\n  for (let i = 0; i < safe.length; i += 1900) descChunks.push(para(safe.substring(i, i + 1900)));\n} else {\n  descChunks.push(para('(no description could be retrieved - scored on title and company alone, capped at 75)'));\n}\n\nconst children = [\n  h2('📋 Full Job Description'),\n  ...descChunks,\n  { object: 'block', type: 'divider', divider: {} },\n  h2('🎯 Resume Customization Tips'),\n  ...(tips.length ? tips.slice(0, 8).map(bullet) : [para('No specific tips generated.')]),\n  { object: 'block', type: 'divider', divider: {} },\n  h2('✉️ Cover Letter Hook'),\n  para(r.cover_letter_hook || 'Not generated.'),\n];\n\nconst discordMsg = [\n  ':dart: **Scored ' + score + '%** - ' + (score >= 80 ? 'strong match' : score >= 65 ? 'worth a look' : score >= 50 ? 'a stretch' : 'poor fit'),\n  '**' + (props['Job Title'] ? String(ex.title) : d.title || '?') + '** @ ' + (d.company || ex.company || '?'),\n  r.fit_summary || '',\n  d.page_url ? '\\n' + d.page_url : '',\n].filter(Boolean).join('\\n');\n\nreturn [{ json: {\n  page_id: d.page_id,\n  ok: true,\n  score,\n  props_patch: JSON.stringify({ properties: props }),\n  blocks_body: JSON.stringify({ children }),\n  discord_msg: discordMsg,\n}}];\n"
+      }
+    },
+    {
+      "id": "sc11",
+      "name": "Patch Notion Props",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2192,
+        800
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.page_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.props_patch }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      }
+    },
+    {
+      "id": "sc12",
+      "name": "Append JD Blocks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2416,
+        800
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/blocks/{{ $('Parse Score').first().json.page_id }}/children",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Score').first().json.blocks_body }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      }
+    },
+    {
+      "id": "sc13",
+      "name": "Score Discord Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        800
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $('Parse Score').first().json.discord_msg }}"
+            },
+            {
+              "name": "username",
+              "value": "Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "sc14",
+      "name": "Clear Score Lock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        800
+      ],
+      "parameters": {
+        "jsCode": "// Release this page's scoring lock so a retry is possible if he ever sets\n// Status back to \"Score Me\". Mirrors the docs branch's Clear Lock, but on\n// the `scoring` key so the two never interfere.\nconst state  = $getWorkflowStaticData('global');\nconst pageId = $('Pick One Page').first().json.id;\nconst locks  = state.scoring || {};\ndelete locks[pageId];\nstate.scoring = locks;\nreturn [{ json: { cleared: pageId } }];\n"
+      }
+    },
+    {
+      "id": "sc15",
+      "name": "Build Score Cost Line",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        976
+      ],
+      "parameters": {
+        "jsCode": "// Emit this scoring call's token spend to InfluxDB. Side branch off the\n// Claude node so the pipeline is never gated on a cost write. Pricing mirrors\n// the docs branch's Build Cost Line - USD per 1M tokens.\nconst resp = $input.first().json;\nconst u = resp.usage || {};\n\nconst model        = resp.model || 'unknown';\nconst inputTokens  = u.input_tokens  || 0;\nconst outputTokens = u.output_tokens || 0;\nconst cacheRead    = u.cache_read_input_tokens     || 0;\nconst cacheWrite   = u.cache_creation_input_tokens || 0;\n\nlet inCpm, outCpm;\nif      (model.includes('haiku'))    { inCpm =  1.00; outCpm =  5.00; }\nelse if (model.includes('sonnet-5')) { inCpm =  2.00; outCpm = 10.00; }\nelse if (model.includes('sonnet'))   { inCpm =  3.00; outCpm = 15.00; }\nelse if (model.includes('opus'))     { inCpm =  5.00; outCpm = 25.00; }\nelse if (model.includes('fable'))    { inCpm = 10.00; outCpm = 50.00; }\nelse                                 { inCpm =  1.00; outCpm =  5.00; }\n\n// This branch sends no cache_control, so the write premium is not applied.\nconst micro = Math.round(\n  inputTokens * inCpm + outputTokens * outCpm + cacheRead * inCpm * 0.10\n);\n\nconst esc = s => String(s).replace(/[ ,=]/g, '\\\\$&');\n\nconst line =\n  `ai_cost,workflow=${esc('job-scorer-on-demand')},model=${esc(model)} ` +\n  `input_tokens=${inputTokens}i,output_tokens=${outputTokens}i,` +\n  `cache_read_tokens=${cacheRead}i,cache_write_tokens=${cacheWrite}i,` +\n  `cost_microdollars=${micro}i ${Date.now() * 1000000}`;\n\nreturn [{ json: { line, model, micro } }];\n"
+      }
+    },
+    {
+      "id": "sc16",
+      "name": "Log Score Cost",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1968,
+        976
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "http://YOUR_INFLUXDB_HOST:8086/api/v2/write?org=YOUR_ORG&bucket=ai_cost&precision=ns",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.line }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "InfluxDB ai_cost writer"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Poll Every 10 Min": {
+      "main": [
+        [
+          {
+            "node": "Query Applying Jobs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Score Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Applying Jobs": {
+      "main": [
+        [
+          {
+            "node": "Check & Extract Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check & Extract Page": {
+      "main": [
+        [
+          {
+            "node": "Guard Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Page Info": {
+      "main": [
+        [
+          {
+            "node": "Get Page Blocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Page Blocks": {
+      "main": [
+        [
+          {
+            "node": "Extract Description",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Description": {
+      "main": [
+        [
+          {
+            "node": "Resume Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Generate Docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Generate Docs": {
+      "main": [
+        [
+          {
+            "node": "Parse Docs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Cost Line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Docs": {
+      "main": [
+        [
+          {
+            "node": "Create Resume Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Resume Doc": {
+      "main": [
+        [
+          {
+            "node": "Insert Resume Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Resume Content": {
+      "main": [
+        [
+          {
+            "node": "Create Cover Letter Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Cover Letter Doc": {
+      "main": [
+        [
+          {
+            "node": "Insert Cover Letter Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Cover Letter Content": {
+      "main": [
+        [
+          {
+            "node": "Create App Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create App Folder": {
+      "main": [
+        [
+          {
+            "node": "Move Resume to Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Resume to Folder": {
+      "main": [
+        [
+          {
+            "node": "Move Cover Letter to Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Cover Letter to Folder": {
+      "main": [
+        [
+          {
+            "node": "Build Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Update Data": {
+      "main": [
+        [
+          {
+            "node": "Update Notion Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Notion Status": {
+      "main": [
+        [
+          {
+            "node": "Discord Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Extract Page Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Content": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord Notify": {
+      "main": [
+        [
+          {
+            "node": "Clear Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Cost Line": {
+      "main": [
+        [
+          {
+            "node": "Log AI Cost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Score Queue": {
+      "main": [
+        [
+          {
+            "node": "Query Score Me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Score Me": {
+      "main": [
+        [
+          {
+            "node": "Pick One Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick One Page": {
+      "main": [
+        [
+          {
+            "node": "Get JD Blocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get JD Blocks": {
+      "main": [
+        [
+          {
+            "node": "Resolve Description",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Description": {
+      "main": [
+        [
+          {
+            "node": "Needs Fetch?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Fetch?": {
+      "main": [
+        [
+          {
+            "node": "Fetch JD via Jina",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Score Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch JD via Jina": {
+      "main": [
+        [
+          {
+            "node": "Build Score Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Score Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Score Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Score Job": {
+      "main": [
+        [
+          {
+            "node": "Parse Score",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Score Cost Line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Score": {
+      "main": [
+        [
+          {
+            "node": "Patch Notion Props",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch Notion Props": {
+      "main": [
+        [
+          {
+            "node": "Append JD Blocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append JD Blocks": {
+      "main": [
+        [
+          {
+            "node": "Score Discord Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Discord Notify": {
+      "main": [
+        [
+          {
+            "node": "Clear Score Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Score Cost Line": {
+      "main": [
+        [
+          {
+            "node": "Log Score Cost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

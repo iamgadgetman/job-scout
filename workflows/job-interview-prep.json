@@ -1,0 +1,688 @@
+{
+  "name": "Job Interview Prep",
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "Poll Every 10 Min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -256,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "i1",
+      "name": "Build Interview Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// One item per Notion board so a single credentialed HTTP node queries all\n// three. Not a Merge - n8n Merge v3 silently drops input ports past idx 1.\nconst DBS = [\n  { db_id: 'YOUR_NOTION_DB_MAIN', board: 'Jobs' },\n  { db_id: 'YOUR_NOTION_DB_CLOUD', board: 'Cloud Networking' },\n  { db_id: 'YOUR_NOTION_DB_SECURITY', board: 'Network Security' },\n];\nreturn DBS.map(d => ({ json: d }));\n"
+      }
+    },
+    {
+      "id": "i2",
+      "name": "Query Interviewing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        192,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $json.db_id }}/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{\"filter\": {\"and\": [{\"property\": \"Status\", \"select\": {\"equals\": \"Interviewing\"}}, {\"property\": \"Interview Prep\", \"url\": {\"is_empty\": true}}]}, \"page_size\": 25}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "i3",
+      "name": "Pick One Interview",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Flatten the three board queries and take one page per poll. An interview\n// sheet is a single Claude call plus three Google API calls, so one at a time\n// keeps well clear of Notion's ~3 req/s limit.\nconst pages = [];\nfor (const item of $input.all()) {\n  const r = item.json.results;\n  if (Array.isArray(r)) pages.push(...r);\n}\nif (!pages.length) return [];\n\nconst state = $getWorkflowStaticData('global');\nconst now = Date.now();\nconst STALE_MS = 30 * 60 * 1000;\n\nconst locks = state.prepping || {};\nfor (const [pid, ts] of Object.entries(locks)) {\n  if (now - ts > STALE_MS) delete locks[pid];\n}\n\nconst page = pages.find(p => !locks[p.id]);\nif (!page) { state.prepping = locks; return []; }\n\nlocks[page.id] = now;\nstate.prepping = locks;\nreturn [{ json: page }];\n"
+      }
+    },
+    {
+      "id": "i4",
+      "name": "Get JD Blocks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "url": "=https://api.notion.com/v1/blocks/{{ $json.id }}/children?page_size=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "i5",
+      "name": "Extract Interview Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Gather everything the prep sheet needs: the job description from the page\n// body, plus the analysis columns the scorer already wrote. Missing Skills is\n// the valuable one - those are the gaps he will actually be probed on.\nconst page   = $('Pick One Interview').first().json;\nconst props  = page.properties || {};\nconst blocks = $json.results || [];\n\nconst rt  = p => (p && p.rich_text && p.rich_text[0] && p.rich_text[0].text\n                    ? p.rich_text[0].text.content : '').trim();\nconst sel = p => (p && p.select ? p.select.name : '') || '';\n\nconst title   = (props['Job Title'] && props['Job Title'].title\n                 && props['Job Title'].title[0] && props['Job Title'].title[0].text\n                 ? props['Job Title'].title[0].text.content : 'Unknown Role').trim();\nconst company = rt(props['Company']) || 'Unknown Company';\n\n// Prefer the text under the \"Full Job Description\" heading; fall back to all\n// prose on the page, because rows created by the old apply-url path never got\n// that heading written.\nconst under = [];\nconst all   = [];\nlet inDesc = false;\nfor (const b of blocks) {\n  const t = b.type;\n  if (t === 'heading_2') {\n    const h = (b.heading_2.rich_text[0] || {}).plain_text || '';\n    if (/Full Job Description/i.test(h)) { inDesc = true; continue; }\n    if (inDesc) break;            // next heading ends the description\n  }\n  if (t === 'divider' && inDesc) break;\n  const rich = b[t] && b[t].rich_text;\n  if (Array.isArray(rich) && rich.length) {\n    const s = rich.map(x => x.plain_text || '').join('').trim();\n    if (!s) continue;\n    all.push(s);\n    if (inDesc) under.push(s);\n  }\n}\nconst description = (under.length ? under : all).join('\\n').substring(0, 6000);\n\nconst folderUrl = (props['Drive Folder'] && props['Drive Folder'].url) || '';\nconst m = folderUrl.match(/folders\\/([A-Za-z0-9_-]+)/);\n\nconst safe = (s, n) => (s || '').replace(/[^\\w\\s-]/g, '').replace(/\\s+/g, ' ').trim().substring(0, n);\n\nreturn [{ json: {\n  page_id:   page.id,\n  page_url:  page.url || '',\n  title, company,\n  score:     (props['Score'] && props['Score'].number) || null,\n  role_type: sel(props['Role Type']),\n  location:  rt(props['Location']),\n  salary_min: (props['Salary Min'] && props['Salary Min'].number) || null,\n  salary_max: (props['Salary Max'] && props['Salary Max'].number) || null,\n  apply_url: (props['Apply URL'] && props['Apply URL'].url) || '',\n  tags:      (props['Tags'] && props['Tags'].multi_select || []).map(t => t.name),\n  fit_summary:    rt(props['Fit Summary']),\n  missing_skills: rt(props['Missing Skills']),\n  red_flags:      rt(props['Red Flags']),\n  description,\n  have_description: description.length >= 200,\n  // No Drive Folder means documents were never generated for this job (he\n  // jumped straight to Interviewing). Fall back to the applications root so\n  // the sheet still lands somewhere sane instead of failing the Drive move.\n  folder_id: m ? m[1] : 'YOUR_DRIVE_FOLDER_ID',\n  folder_is_fallback: !m,\n  folder_url: folderUrl,\n  doc_title: `Interview Prep - ${safe(title, 45)} - ${safe(company, 25)} ${new Date().toISOString().split('T')[0]}`,\n}}];\n"
+      }
+    },
+    {
+      "id": "i6",
+      "name": "Build Interview Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Builds the interview-prep prompt.\n//\n// The CANDIDATE PROFILE block below is NOT written here - build_interview.py\n// lifts it out of scorer_src/build_score_prompt.js at deploy time and splices\n// it in where the placeholder sits. That keeps one source of truth for the\n// profile instead of a third copy drifting away from the other two.\nconst d = $('Extract Interview Context').first().json;\n\nconst CANDIDATE_PROFILE = `CANDIDATE PROFILE — Your Name\n- Location: Remote strongly preferred. Hybrid/onsite acceptable ONLY in Your City or the Metro Area (Nearby City A/B/C), ST. Remote-Only City counts ONLY if the role is remote. Onsite/hybrid anywhere else, or relocation, is a dealbreaker. Max 10% travel.\n- Experience: [N] years in [networking / security / infrastructure] — NOT a software developer\n- Current Role: [Title], [Employer] ([year]–present)\n  • [Scope: number of sites, users, devices]\n  • [Key platform or responsibility]\n  • [Current project]\n\n- STRONG / EXPERT skills:\n  • Routing: [e.g. BGP, OSPF, MPLS]\n  • Switching: [e.g. VLANs, QoS, vendor platforms]\n  • Wireless: [platforms]\n  • Firewalls: [vendors — config, rule lifecycle, hardening]\n  • Monitoring: [e.g. Prometheus, Grafana, SolarWinds]\n  • Systems: [OSes, hypervisors, containers]\n  • Automation: [tools — and how deep]\n  • Vendors: [list]\n\n- LIMITED / DEVELOPING:\n  • [Skill]: [honest depth — conceptual only / end-user / in training]\n  • [Skill]: [honest depth]\n\n- Certifications: [certs and degrees]\n- Salary: target ~$[N]k — a posted range that reaches $[N]k at either end is on target. More is welcome.\n- Hard dealbreakers: [e.g. onsite outside your area, relocation, clearance, drug testing, travel >10%]\n- Employer size: [preference, e.g. prefers organizations under 10,000 employees — soft flag]`;\n\nconst money = n => (typeof n === 'number' ? '$' + n.toLocaleString() : null);\nconst sal = d.salary_min || d.salary_max\n  ? [money(d.salary_min), money(d.salary_max)].filter(Boolean).join(' - ')\n  : 'not stated';\n\nconst analysis = [\n  d.fit_summary    ? `Fit summary (from the automated scoring): ${d.fit_summary}` : null,\n  d.missing_skills && d.missing_skills !== 'None'\n    ? `Skills the scorer flagged as MISSING from his background: ${d.missing_skills}` : null,\n  d.red_flags && d.red_flags !== 'None'\n    ? `Concerns the scorer raised about this role: ${d.red_flags}` : null,\n  d.tags && d.tags.length ? `Technologies tagged on this posting: ${d.tags.join(', ')}` : null,\n].filter(Boolean).join('\\n');\n\nconst jd = d.have_description\n  ? d.description\n  : 'No job description is stored for this posting. Build the sheet from the title, company and tagged technologies alone, and say so at the top of role_snapshot.';\n\nconst prompt = `You are an interview coach preparing a senior network/infrastructure engineer for a specific interview. Produce a focused prep sheet.\n\n${CANDIDATE_PROFILE}\n\nTHE INTERVIEW:\nRole: ${d.title}\nCompany: ${d.company}\nRole type: ${d.role_type || 'unspecified'}\nLocation: ${d.location || 'unspecified'}\nPosted salary: ${sal}\n\nWHAT THE AUTOMATED SCORING ALREADY FOUND:\n${analysis || '(no prior analysis on file)'}\n\nJOB DESCRIPTION:\n${jd}\n\nTASK: Write a practical prep sheet. Focus on the TECHNOLOGIES AND SKILLS THIS\nJOB ACTUALLY REQUIRES, and separately on the \"nice to have\" / \"preferred\" /\n\"bonus\" items the posting mentions — those are where interviews are won or\nlost, and where he most needs a prepared answer.\n\nRules:\n- Draw every question from THIS posting. No generic \"tell me about yourself\".\n- For each question, say which of HIS REAL experiences to reach for. Use only\n  things in the candidate profile above. Never invent experience.\n- Where a required skill is one of his gaps, say plainly how to answer\n  honestly without overclaiming — what he HAS done that is adjacent, and what\n  he is actively learning. Do not coach him to bluff.\n- Keep each field tight. This is a one-page sheet he reads before a call, not\n  an essay.\n\nReturn ONLY valid JSON — no markdown fences, no extra text:\n{\n  \"role_snapshot\": \"Two sentences: what this role actually is day to day, and the single thing they most want to verify he can do.\",\n  \"required_tech\": [\n    {\n      \"question\": \"A question they are likely to ask about a REQUIRED technology or skill\",\n      \"why\": \"One short line on why this comes up for this role\",\n      \"answer_with\": \"Which specific experience of his to lead with, and the concrete detail or metric to cite\"\n    }\n  ],\n  \"nice_to_haves\": [\n    {\n      \"question\": \"A question about a 'preferred' / 'nice to have' / 'bonus' item in the posting\",\n      \"why\": \"One short line\",\n      \"answer_with\": \"What he has that is closest, framed honestly\"\n    }\n  ],\n  \"gap_questions\": [\n    {\n      \"question\": \"A question about something the posting requires that he genuinely lacks\",\n      \"why\": \"One short line naming the gap\",\n      \"answer_with\": \"An honest answer: the adjacent thing he HAS done, plus what he is actively learning. No bluffing.\"\n    }\n  ],\n  \"ask_them\": [\n    \"A sharp question for HIM to ask the interviewer, specific to this company or role\"\n  ]\n}\n\nCounts: exactly 5 required_tech, 3 nice_to_haves, 2 gap_questions, 4 ask_them.\nIf the posting genuinely lists no preferred/bonus items, still produce 3\nnice_to_haves drawn from secondary skills the description implies, and say so\nin the \"why\" line.`;\n\n// Pre-built so the HTTP node carries no inline expression - an n8n expression\n// containing an adjacent \"}}\" terminates early and fails with \"invalid syntax\".\nconst claude_body = JSON.stringify({\n  model: 'claude-sonnet-4-6',\n  max_tokens: 4000,\n  messages: [{ role: 'user', content: prompt }],\n});\n\nreturn [{ json: { ...d, claude_body } }];\n"
+      }
+    },
+    {
+      "id": "i7",
+      "name": "Claude Interview Questions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1312,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.claude_body }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi"
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic (Claude)"
+        }
+      }
+    },
+    {
+      "id": "i8",
+      "name": "Parse Interview Sheet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Render Claude's prep sheet into a formatted Google Doc batchUpdate body.\n// Same index-tracking approach as the docs branch's Parse Docs: text is\n// accumulated while character offsets are recorded, then style requests are\n// appended referencing those ranges.\nconst resp = $input.first().json;\nconst d    = $('Build Interview Prompt').first().json;\n\nconst raw = (resp.content && resp.content[0] && resp.content[0].text) || '';\nlet r = null;\ntry {\n  const BT = String.fromCharCode(96);\n  let c = raw.replace(new RegExp(BT + BT + BT + '(json)?', 'g'), '').trim();\n  const s = c.indexOf('{'), e = c.lastIndexOf('}');\n  if (s >= 0 && e > s) c = c.substring(s, e + 1);\n  r = JSON.parse(c);\n} catch (err) { r = null; }\n\nif (!r || !Array.isArray(r.required_tech)) {\n  // Fail loudly in Notion rather than leaving a blank doc behind. Status is\n  // untouched: the row stays \"Interviewing\" but Interview Prep gets no URL,\n  // so the next poll retries once the lock releases.\n  return [{ json: {\n    page_id: d.page_id, ok: false,\n    discord_msg: ':warning: **Interview prep failed** for **' + d.title +\n                 '** @ ' + d.company + ' - Claude returned no usable JSON.\\n' +\n                 (d.page_url || ''),\n  }}];\n}\n\nconst DARK_BLUE = { color: { rgbColor: { red: 0.110, green: 0.239, blue: 0.376 } } };\nconst MED_GRAY  = { color: { rgbColor: { red: 0.40, green: 0.40, blue: 0.40 } } };\n\nlet text = '';\nlet pos = 1;\nconst fmt = [];\n\nfunction add(t, style, align) {\n  if (!t) return;\n  const start = pos;\n  text += t; pos += t.length;\n  const end = pos;\n  if (style) {\n    let se = end;\n    for (let i = t.length - 1; i >= 0 && t[i] === '\\n'; i--) se--;\n    if (se > start) {\n      const ts = {}, f = [];\n      if (style.bold     !== undefined) { ts.bold = style.bold; f.push('bold'); }\n      if (style.italic   !== undefined) { ts.italic = style.italic; f.push('italic'); }\n      if (style.fontSize !== undefined) { ts.fontSize = { magnitude: style.fontSize, unit: 'PT' }; f.push('fontSize'); }\n      if (style.foregroundColor) { ts.foregroundColor = style.foregroundColor; f.push('foregroundColor'); }\n      if (f.length) fmt.push({ updateTextStyle: {\n        range: { startIndex: start, endIndex: se }, textStyle: ts, fields: f.join(',') } });\n    }\n  }\n  if (align) fmt.push({ updateParagraphStyle: {\n    range: { startIndex: start, endIndex: end },\n    paragraphStyle: { alignment: align }, fields: 'alignment' } });\n}\nconst header = t => add(t + '\\n', { bold: true, fontSize: 12, foregroundColor: DARK_BLUE });\n\nconst money = n => (typeof n === 'number' ? '$' + n.toLocaleString() : null);\nconst sal = d.salary_min || d.salary_max\n  ? [money(d.salary_min), money(d.salary_max)].filter(Boolean).join(' - ') : null;\n\nadd('INTERVIEW PREP\\n', { bold: true, fontSize: 18 }, 'CENTER');\nadd(d.title + '  —  ' + d.company + '\\n', { fontSize: 12 }, 'CENTER');\nconst meta = [\n  d.role_type || null,\n  d.location || null,\n  sal,\n  typeof d.score === 'number' ? 'Fit score ' + d.score + '%' : null,\n].filter(Boolean).join('  •  ');\nif (meta) add(meta + '\\n', { fontSize: 9, italic: true, foregroundColor: MED_GRAY }, 'CENTER');\nadd('\\n');\n\nif (r.role_snapshot) {\n  header('THE ROLE');\n  add(r.role_snapshot + '\\n\\n', { fontSize: 10 });\n}\n\nfunction section(titleText, items, note) {\n  if (!Array.isArray(items) || !items.length) return;\n  header(titleText);\n  if (note) add(note + '\\n', { fontSize: 9, italic: true, foregroundColor: MED_GRAY });\n  items.forEach((q, i) => {\n    add((i + 1) + '.  ' + (q.question || '') + '\\n', { bold: true, fontSize: 10 });\n    if (q.why)         add('     Why: ' + q.why + '\\n', { fontSize: 9, italic: true, foregroundColor: MED_GRAY });\n    if (q.answer_with) add('     Answer with: ' + q.answer_with + '\\n', { fontSize: 10 });\n    add('\\n');\n  });\n}\n\nsection('REQUIRED SKILLS — EXPECT THESE', r.required_tech);\nsection('NICE-TO-HAVES — WHERE THE JOB IS WON', r.nice_to_haves,\n        'Preferred/bonus items from the posting. Fewer candidates prepare for these.');\nsection('YOUR GAPS — ANSWER HONESTLY', r.gap_questions,\n        'Do not bluff. Lead with the adjacent experience, then what you are learning.');\n\nif (Array.isArray(r.ask_them) && r.ask_them.length) {\n  header('QUESTIONS TO ASK THEM');\n  r.ask_them.forEach(q => add('  •  ' + q + '\\n', { fontSize: 10 }));\n  add('\\n');\n}\n\nadd('\\n');\nadd('Generated ' + new Date().toISOString().split('T')[0] +\n    ' from the job description on file. Verify against the live posting before the call.\\n',\n    { fontSize: 8, italic: true, foregroundColor: MED_GRAY });\n\nconst counts = {\n  required: (r.required_tech || []).length,\n  nice: (r.nice_to_haves || []).length,\n  gaps: (r.gap_questions || []).length,\n  ask: (r.ask_them || []).length,\n};\n\nreturn [{ json: {\n  page_id: d.page_id, ok: true,\n  doc_title: d.doc_title,\n  folder_id: d.folder_id,\n  counts,\n  doc_batch_body: JSON.stringify({\n    requests: [{ insertText: { location: { index: 1 }, text } }, ...fmt] }),\n  title: d.title, company: d.company, page_url: d.page_url,\n}}];\n"
+      }
+    },
+    {
+      "id": "i9",
+      "name": "Sheet OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "i10",
+      "name": "Create Prep Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1984,
+        188
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://docs.googleapis.com/v1/documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ title: $json.doc_title }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "id": "i11",
+      "name": "Insert Prep Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2208,
+        188
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Interview Sheet').first().json.doc_batch_body }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "id": "i12",
+      "name": "Move Prep to Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2432,
+        188
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Prep Doc').first().json.documentId }}?addParents={{ $('Parse Interview Sheet').first().json.folder_id }}&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{}",
+        "options": {}
+      },
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "id": "i13",
+      "name": "Build Prep Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2656,
+        188
+      ],
+      "parameters": {
+        "jsCode": "// Assemble the Notion patch and the Discord message now that the doc exists.\n// Pre-built as strings so the HTTP nodes carry no complex inline expressions.\nconst p   = $('Parse Interview Sheet').first().json;\nconst doc = $('Create Prep Doc').first().json;\n\nconst docUrl = 'https://docs.google.com/document/d/' + doc.documentId + '/edit';\nconst c = p.counts || {};\n\nconst discordMsg = [\n  '🎤 **Interview prep ready!**',\n  '**' + p.title + '** @ ' + p.company,\n  `${c.required || 0} required-skill questions • ${c.nice || 0} nice-to-have • ` +\n  `${c.gaps || 0} gap • ${c.ask || 0} to ask them`,\n  '',\n  '📝 [Interview Prep Sheet](' + docUrl + ')',\n  p.page_url || '',\n].filter(Boolean).join('\\n');\n\nreturn [{ json: {\n  page_id: p.page_id,\n  doc_url: docUrl,\n  discord_msg: discordMsg,\n  notion_patch: JSON.stringify({\n    properties: { 'Interview Prep': { url: docUrl } },\n  }),\n}}];\n"
+      }
+    },
+    {
+      "id": "i14",
+      "name": "Patch Interview Prep URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2880,
+        188
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.page_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notion_patch }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      }
+    },
+    {
+      "id": "i15",
+      "name": "Prep Discord Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3104,
+        188
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $('Build Prep Result').first().json.discord_msg }}"
+            },
+            {
+              "name": "username",
+              "value": "Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "i16",
+      "name": "Prep Failed Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1984,
+        412
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $('Parse Interview Sheet').first().json.discord_msg }}"
+            },
+            {
+              "name": "username",
+              "value": "Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "i17",
+      "name": "Clear Interview Lock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3328,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Release the lock so clearing the Interview Prep cell can regenerate later.\nconst state  = $getWorkflowStaticData('global');\nconst pageId = $('Pick One Interview').first().json.id;\nconst locks  = state.prepping || {};\ndelete locks[pageId];\nstate.prepping = locks;\nreturn [{ json: { cleared: pageId } }];\n"
+      }
+    },
+    {
+      "id": "i18",
+      "name": "Build Prep Cost Line",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        524
+      ],
+      "parameters": {
+        "jsCode": "// Token spend for the prep call, mirroring the other two workflows.\nconst resp = $input.first().json;\nconst u = resp.usage || {};\nconst model = resp.model || 'unknown';\nconst i = u.input_tokens || 0, o = u.output_tokens || 0;\nconst cr = u.cache_read_input_tokens || 0, cw = u.cache_creation_input_tokens || 0;\n\nlet inCpm, outCpm;\nif      (model.includes('haiku'))    { inCpm =  1.00; outCpm =  5.00; }\nelse if (model.includes('sonnet-5')) { inCpm =  2.00; outCpm = 10.00; }\nelse if (model.includes('sonnet'))   { inCpm =  3.00; outCpm = 15.00; }\nelse if (model.includes('opus'))     { inCpm =  5.00; outCpm = 25.00; }\nelse if (model.includes('fable'))    { inCpm = 10.00; outCpm = 50.00; }\nelse                                 { inCpm =  1.00; outCpm =  5.00; }\n\nconst micro = Math.round(i * inCpm + o * outCpm + cr * inCpm * 0.10);\nconst esc = s => String(s).replace(/[ ,=]/g, '\\\\$&');\nconst line = `ai_cost,workflow=${esc('job-interview-prep')},model=${esc(model)} ` +\n  `input_tokens=${i}i,output_tokens=${o}i,cache_read_tokens=${cr}i,` +\n  `cache_write_tokens=${cw}i,cost_microdollars=${micro}i ${Date.now() * 1000000}`;\nreturn [{ json: { line, model, micro } }];\n"
+      }
+    },
+    {
+      "id": "i19",
+      "name": "Log Prep Cost",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1536,
+        524
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://YOUR_INFLUXDB_HOST:8086/api/v2/write?org=YOUR_ORG&bucket=ai_cost&precision=ns",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.line }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "InfluxDB ai_cost writer"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Poll Every 10 Min": {
+      "main": [
+        [
+          {
+            "node": "Build Interview Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Interview Queue": {
+      "main": [
+        [
+          {
+            "node": "Query Interviewing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Interviewing": {
+      "main": [
+        [
+          {
+            "node": "Pick One Interview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick One Interview": {
+      "main": [
+        [
+          {
+            "node": "Get JD Blocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get JD Blocks": {
+      "main": [
+        [
+          {
+            "node": "Extract Interview Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Interview Context": {
+      "main": [
+        [
+          {
+            "node": "Build Interview Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Interview Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Interview Questions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Interview Questions": {
+      "main": [
+        [
+          {
+            "node": "Parse Interview Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Prep Cost Line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Interview Sheet": {
+      "main": [
+        [
+          {
+            "node": "Sheet OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet OK?": {
+      "main": [
+        [
+          {
+            "node": "Create Prep Doc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Failed Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Prep Doc": {
+      "main": [
+        [
+          {
+            "node": "Insert Prep Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Prep Content": {
+      "main": [
+        [
+          {
+            "node": "Move Prep to Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Prep to Folder": {
+      "main": [
+        [
+          {
+            "node": "Build Prep Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prep Result": {
+      "main": [
+        [
+          {
+            "node": "Patch Interview Prep URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch Interview Prep URL": {
+      "main": [
+        [
+          {
+            "node": "Prep Discord Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Discord Notify": {
+      "main": [
+        [
+          {
+            "node": "Clear Interview Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Failed Notify": {
+      "main": [
+        [
+          {
+            "node": "Clear Interview Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prep Cost Line": {
+      "main": [
+        [
+          {
+            "node": "Log Prep Cost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

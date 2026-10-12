@@ -1,0 +1,565 @@
+{
+  "name": "Job Apply From URL",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "apply-url",
+        "options": {
+          "responseData": "{\"message\": \"Processing started. Check Discord for your docs in ~60 seconds.\"}"
+        }
+      },
+      "id": "b1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst q = $json.query || {};\nconst b = $json.body  || {};\nconst url = q.url || b.url || '';\nif (!url) {\n  // Return a Discord error rather than failing silently\n  return [{ json: { error: true, url: '', message: 'No url parameter provided. Use ?url=JOB_URL' } }];\n}\nreturn [{ json: { url, error: false } }];\n"
+      },
+      "id": "b2",
+      "name": "Extract URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://r.jina.ai/{{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "text/plain"
+            },
+            {
+              "name": "X-No-Cache",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "b3",
+      "name": "Fetch via Jina",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst url  = $('Extract URL').first().json.url;\nconst raw  = $json.data || $json.body || $json || '';\nconst text = typeof raw === 'string' ? raw : JSON.stringify(raw);\n\nconst resumeText = \"Your Name\\nYour City, ST | 555.555.0100 | you@example.com | yourwebsite.example | github.com/your-handle\\n\\nPROFESSIONAL SUMMARY\\n[Two or three sentences: years of experience, domains, the kind of role you want next.]\\n\\nTECHNICAL SKILLS\\nRouting & Switching: [skills]\\nSecurity: [skills]\\nSystems & Virtualization: [skills]\\nMonitoring & Automation: [skills]\\n\\nPROFESSIONAL EXPERIENCE\\n[Title] | [Employer] \\u2014 [City, ST] | [Year]\\u2013Present\\n- [Achievement with a number in it]\\n- [Achievement with a number in it]\\n\\n[Title] | [Employer] \\u2014 [City, ST] | [Year]\\u2013[Year]\\n- [Achievement with a number in it]\\n\\nEDUCATION & CERTIFICATIONS\\n[Degree] | [School]\\n[Certification] \\u2014 [Year]\";\n\n// Strip boilerplate: remove \"Similar jobs\" section and everything after\nlet content = text;\nconst simIdx = content.search(/#{2,3}\\s*Similar jobs/i);\nif (simIdx > 0) content = content.substring(0, simIdx);\n\n// Remove everything before the first H1 (nav/header junk)\nconst h1idx = content.search(/\\n#\\s+/);\nif (h1idx > 200) content = content.substring(h1idx);\n\n// Trim\ncontent = content.substring(0, 6000).trim();\n\nconst prompt = `You are a professional resume writer and career coach helping a senior network/infrastructure engineer apply for a job.\n\nJOB POSTING URL: ${url}\n\nJOB POSTING CONTENT (scraped markdown):\n${content}\n\nCANDIDATE BASE RESUME:\n${resumeText}\n\nTASK: Extract the job details and generate a complete tailored application package.\nReturn ONLY valid JSON — no markdown fences, no extra text:\n\n{\n  \"job\": {\n    \"title\": \"job title from the posting\",\n    \"company\": \"company name (if not shown, use the domain name)\",\n    \"location\": \"city/state or Remote\",\n    \"salary\": \"salary range as shown, or empty string\",\n    \"is_remote\": true or false,\n    \"role_type\": \"one of: SRE, Network Engineer, DevOps, Platform Engineer, Cloud Engineer, Infrastructure Engineer, Other\",\n    \"tags\": [\"up to 8 key technology and skill tags extracted from the posting\"]\n  },\n  \"resume_sections\": {\n    \"summary\": \"2-3 sentence professional summary written specifically for this role at this company\",\n    \"core_competencies\": [\"10-12 competency phrases most relevant to this specific job — from the candidate's real skills\"],\n    \"experience\": [\n      {\n        \"company\": \"exact company name\",\n        \"title\": \"exact title held\",\n        \"dates\": \"date range\",\n        \"bullets\": [\"2-4 achievement bullets rewritten to lead with skills this job values most — preserve all specific metrics\"]\n      }\n    ],\n    \"technical_skills\": \"Technical skills section with technologies most relevant to this role listed first\",\n    \"education\": \"Bachelor of Applied Science, Information Security Systems | Your University\\\\nBachelor of Applied Science, Electronics/Communications Engineering Technology | Your University\\\\nAssociate of Applied Science, Computer/Electronics Engineering Technology | Your University\"\n  },\n  \"cover_letter\": \"Full 3-4 paragraph cover letter. Paragraph 1: specific hook referencing the company and role. Paragraph 2: 2-3 most relevant experiences with metrics. Paragraph 3: specific value proposition for this role. Paragraph 4: professional close with call to action.\"\n}`;\n\nreturn [{ json: { url, prompt } }];\n"
+      },
+      "id": "b4",
+      "name": "Build Apply Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({model: \"claude-sonnet-4-6\", max_tokens: 8096, messages: [{role: \"user\", content: $json.prompt}]}) }}",
+        "options": {}
+      },
+      "id": "b5",
+      "name": "Claude Generate Docs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        304
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic (Claude)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp   = $input.first().json;\nconst urlRef = $('Extract URL').first().json.url;\n\nlet result = {};\nconst raw  = resp.content?.[0]?.text || '';\n\ntry {\n  const cleaned = raw.replace(/```json\\s*/g,'').replace(/```\\s*/g,'').trim();\n  result = JSON.parse(cleaned);\n} catch(e) {\n  result = {\n    job: { title: 'Unknown', company: 'Unknown', location: '', salary: '', is_remote: false, role_type: 'Other', tags: [] },\n    resume_sections: null,\n    cover_letter: raw || 'Generation failed.'\n  };\n}\n\nconst job = result.job || {};\nconst s   = result.resume_sections;\n\nfunction slugify(str, max) {\n  return (str || '').replace(/[^\\w\\s-]/g,'').replace(/\\s+/g,' ').trim().substring(0, max || 60);\n}\n\nconst docDate     = new Date().toISOString().split('T')[0];\nconst folderName  = slugify(`${job.company} - ${job.title}`, 80);\nconst resumeTitle = `Resume - ${slugify(job.title,45)} - ${(job.company||'').substring(0,25)} ${docDate}`;\nconst clTitle     = `Cover Letter - ${slugify(job.title,40)} - ${(job.company||'').substring(0,25)} ${docDate}`;\n\nlet resumeText = '';\nif (s) {\n  const expSection = (s.experience || []).map(exp => {\n    const bullets = (exp.bullets || []).map(b => '    \\u2022 ' + b).join('\\n');\n    const roleInfo = [exp.title, exp.dates].filter(Boolean).join('  |  ');\n    return `${(exp.company||'').toUpperCase()}\\n${roleInfo}\\n${bullets}`;\n  }).join('\\n\\n');\n\n  resumeText = [\n    'YOUR NAME',\n    'Your City, WA  \\u2022  555.555.0100  \\u2022  you@example.com  \\u2022  https://yourwebsite.example',\n    '',\n    `Tailored for: ${job.title} at ${job.company}`,\n    '',\n    '------------------------------------------------------------',\n    'PROFESSIONAL SUMMARY',\n    '------------------------------------------------------------',\n    s.summary || '',\n    '',\n    '------------------------------------------------------------',\n    'CORE COMPETENCIES',\n    '------------------------------------------------------------',\n    (s.core_competencies || []).join('  \\u2022  '),\n    '',\n    '------------------------------------------------------------',\n    'PROFESSIONAL EXPERIENCE',\n    '------------------------------------------------------------',\n    expSection,\n    '',\n    '------------------------------------------------------------',\n    'TECHNICAL SKILLS',\n    '------------------------------------------------------------',\n    s.technical_skills || '',\n    '',\n    '------------------------------------------------------------',\n    'EDUCATION',\n    '------------------------------------------------------------',\n    s.education || '',\n  ].join('\\n');\n} else {\n  resumeText = 'Resume generation failed. Raw Claude output:\\n' + raw.substring(0, 2000);\n}\n\nconst coverLetterText = [\n  `${job.company}`,\n  `Re: ${job.title}`,\n  `Date: ${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}`,\n  '',\n  result.cover_letter || 'Cover letter generation failed.',\n  '',\n  'Sincerely,',\n  'Your Name',\n  'you@example.com  |  555.555.0100',\n  'https://yourwebsite.example',\n].join('\\n');\n\n// Pre-build batchUpdate bodies so HTTP nodes don't need complex inline expressions\nconst resumeBatchBody = JSON.stringify({\n  requests: [{ insertText: { location: { index: 1 }, text: resumeText } }]\n});\nconst clBatchBody = JSON.stringify({\n  requests: [{ insertText: { location: { index: 1 }, text: coverLetterText } }]\n});\n\nreturn [{ json: {\n  job, url: urlRef,\n  resume_text: resumeText, cover_letter_text: coverLetterText,\n  resume_batch_body: resumeBatchBody, cl_batch_body: clBatchBody,\n  folder_name: folderName, resume_title: resumeTitle, cl_title: clTitle,\n}}];\n"
+      },
+      "id": "b6",
+      "name": "Parse Apply Docs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://docs.googleapis.com/v1/documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({title: $json.resume_title}) }}",
+        "options": {}
+      },
+      "id": "b7",
+      "name": "Create Resume Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        304
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Apply Docs').first().json.resume_batch_body }}",
+        "options": {}
+      },
+      "id": "b8",
+      "name": "Insert Resume Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1552,
+        304
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://docs.googleapis.com/v1/documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({title: $('Parse Apply Docs').first().json.cl_title}) }}",
+        "options": {}
+      },
+      "id": "b9",
+      "name": "Create Cover Letter Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        304
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $('Parse Apply Docs').first().json.cl_batch_body }}",
+        "options": {}
+      },
+      "id": "b10",
+      "name": "Insert Cover Letter Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1984,
+        304
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({name: $(\"Parse Apply Docs\").first().json.folder_name, mimeType: \"application/vnd.google-apps.folder\", parents: [\"YOUR_DRIVE_FOLDER_ID\"]}) }}",
+        "options": {}
+      },
+      "id": "b11",
+      "name": "Create App Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2208,
+        304
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Resume Doc').first().json.documentId }}?addParents={{ $json.id }}&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{}",
+        "options": {}
+      },
+      "id": "b12",
+      "name": "Move Resume to Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2432,
+        304
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Create Cover Letter Doc').first().json.documentId }}?addParents={{ $('Create App Folder').first().json.id }}&supportsAllDrives=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{}",
+        "options": {}
+      },
+      "id": "b13",
+      "name": "Move Cover Letter to Folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        304
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst d       = $('Parse Apply Docs').first().json;\nconst resume  = $('Create Resume Doc').first().json;\nconst cl      = $('Create Cover Letter Doc').first().json;\nconst folder  = $('Create App Folder').first().json;\nconst job     = d.job;\n\nconst folderId  = folder.id;\nconst folderUrl = 'https://drive.google.com/drive/folders/' + folderId;\nconst resumeUrl = 'https://docs.google.com/document/d/' + resume.documentId + '/edit';\nconst clUrl     = 'https://docs.google.com/document/d/' + cl.documentId + '/edit';\nconst today     = new Date().toISOString().split('T')[0];\n\nfunction para(text) {\n  return {object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:(text||'').substring(0,2000)}}]}};\n}\nfunction h2(text) {\n  return {object:'block',type:'heading_2',heading_2:{rich_text:[{type:'text',text:{content:text}}]}};\n}\n\nconst children = [\n  h2('\\uD83D\\uDCC1 Application Documents'),\n  para('\\uD83D\\uDCC1 Drive Folder: ' + folderUrl),\n  para('\\uD83D\\uDCDD Resume: ' + resumeUrl),\n  para('\\u2709\\uFE0F Cover Letter: ' + clUrl),\n  {object:'block',type:'divider',divider:{}},\n  h2('\\uD83D\\uDD17 Source'),\n  para('Manually added via apply-url webhook'),\n  para('URL: ' + (d.url || '')),\n];\n\nconst body = {\n  parent: { database_id: \"YOUR_NOTION_DB_MAIN\" },\n  properties: {\n    \"Job Title\":   { title:      [{ text: { content: (job.title   ||'Unknown').substring(0,200) } }] },\n    \"Company\":     { rich_text:  [{ text: { content: (job.company ||'Unknown').substring(0,200) } }] },\n    \"Source\":      { select:     { name: 'Manual' } },\n    \"Apply URL\":   { url: d.url || null },\n    \"Location\":    { rich_text:  [{ text: { content: (job.location||'').substring(0,200) } }] },\n    // Score and Priority deliberately omitted: an empty Score is what\n    // makes this row eligible for the on-demand scorer (Status ->\n    // \"Score Me\"), which then sets both from the real fit result.\n    \"Role Type\":   { select:     { name: job.role_type || 'Other' } },\n    \"Tags\":        { multi_select: (job.tags||[]).map(t => ({name: String(t).substring(0,100)})) },\n    \"Status\":      { select:     { name: 'Docs Ready' } },\n    \"Drive Folder\":{ url: folderUrl },\n    \"Date Found\":  { date:       { start: today } },\n  },\n  children,\n};\n\nconst salaryLine = job.salary ? '\\n\\uD83D\\uDCB0 ' + job.salary : '';\nconst locLine    = job.location ? '\\n\\uD83D\\uDCCD ' + job.location + (job.is_remote ? ' (Remote)' : '') : '';\n\nconst discordMsg = [\n  '\\uD83D\\uDCC4 **Application docs ready!** (Manual add)',\n  '**' + (job.title||'?') + '** @ ' + (job.company||'?'),\n  job.salary   ? '\\uD83D\\uDCB0 ' + job.salary   : '',\n  job.location ? '\\uD83D\\uDCCD ' + job.location + (job.is_remote ? ' (Remote)' : '') : '',\n  '',\n  '\\uD83D\\uDCC1 [Application Folder](' + folderUrl + ')',\n  '\\uD83D\\uDCDD [Tailored Resume](' + resumeUrl + ')',\n  '\\u2709\\uFE0F [Cover Letter](' + clUrl + ')',\n  '',\n  'Apply: ' + (d.url || ''),\n].filter(Boolean).join('\\n');\n\nreturn [{ json: { notion_body: JSON.stringify(body), discord_msg: discordMsg } }];\n"
+      },
+      "id": "b14",
+      "name": "Build Notion Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notion_body }}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "id": "b15",
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3088,
+        304
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $('Build Notion Body').first().json.discord_msg }}"
+            },
+            {
+              "name": "username",
+              "value": "Job Scout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b16",
+      "name": "Discord Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3312,
+        304
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract URL": {
+      "main": [
+        [
+          {
+            "node": "Fetch via Jina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch via Jina": {
+      "main": [
+        [
+          {
+            "node": "Build Apply Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Apply Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Generate Docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Generate Docs": {
+      "main": [
+        [
+          {
+            "node": "Parse Apply Docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Apply Docs": {
+      "main": [
+        [
+          {
+            "node": "Create Resume Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Resume Doc": {
+      "main": [
+        [
+          {
+            "node": "Insert Resume Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Resume Content": {
+      "main": [
+        [
+          {
+            "node": "Create Cover Letter Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Cover Letter Doc": {
+      "main": [
+        [
+          {
+            "node": "Insert Cover Letter Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Cover Letter Content": {
+      "main": [
+        [
+          {
+            "node": "Create App Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create App Folder": {
+      "main": [
+        [
+          {
+            "node": "Move Resume to Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Resume to Folder": {
+      "main": [
+        [
+          {
+            "node": "Move Cover Letter to Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Cover Letter to Folder": {
+      "main": [
+        [
+          {
+            "node": "Build Notion Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notion Body": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Notion Page": {
+      "main": [
+        [
+          {
+            "node": "Discord Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

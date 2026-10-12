@@ -1,0 +1,1314 @@
+{
+  "name": "job-scout-security",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 14 * * *"
+            }
+          ]
+        }
+      },
+      "id": "n1",
+      "name": "Daily 7AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "path": "job-search-security",
+        "options": {}
+      },
+      "id": "n2",
+      "name": "On Demand",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\nlet allJobs = [];\n\nfor (const item of items) {\n  const d = item.json;\n\n  // ── JSearch (object with d.data array) ───────────────────────────────────\n  // /search-v2 wraps results as data.jobs; /search returned a bare data array.\n  if (d.data && (Array.isArray(d.data) || Array.isArray(d.data.jobs))) {\n    for (const j of (Array.isArray(d.data) ? d.data : d.data.jobs)) {\n      allJobs.push({\n        job_id:      'jsearch_' + j.job_id,\n        title:       j.job_title || '',\n        company:     j.employer_name || '',\n        location:    j.job_is_remote ? 'Remote' : [j.job_city, j.job_state].filter(Boolean).join(', '),\n        city:        j.job_city || '',\n        state:       j.job_state || '',\n        is_remote:   j.job_is_remote === true,\n        apply_url:   j.job_apply_link || '',\n        description: (j.job_description || '').substring(0, 3000),\n        salary_min:  j.job_min_salary || null,\n        salary_max:  j.job_max_salary || null,\n        salary_text: '',\n        posted_date: j.job_posted_at_timestamp\n          ? new Date(j.job_posted_at_timestamp * 1000).toISOString().split('T')[0] : '',\n        source: 'JSearch'\n      });\n    }\n  }\n\n  // ── Adzuna (results array + count number) ────────────────────────────────\n  else if (d.results && Array.isArray(d.results) && typeof d.count === 'number') {\n    for (const j of d.results) {\n      allJobs.push({\n        job_id:      'adzuna_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.title || '',\n        company:     (j.company && j.company.display_name) || '',\n        location:    (j.location && j.location.display_name) || '',\n        // area = [\"US\", \"Washington\", \"Nearby County\", \"Nearby City A\"]\n        state:       (j.location && j.location.area && j.location.area[1]) || '',\n        city:        (j.location && j.location.area && j.location.area.length > 2) ? j.location.area[j.location.area.length - 1] : '',\n        // \"remote\" alone also matches \"remote access VPN\"; now that on-site jobs\n        // are kept, remote has to mean the job is remote.\n        is_remote:   /\\bremote\\b/i.test(j.title || '') || /\\bremote\\b/i.test((j.location && j.location.display_name) || '')\n                  || /\\b(fully remote|100% remote|remote (position|role|opportunity|work|first)|work from home|remote-first)\\b/i.test(j.description || ''),\n        apply_url:   j.redirect_url || '',\n        description: (j.description || '').substring(0, 3000),\n        salary_min:  j.salary_min || null,\n        salary_max:  j.salary_max || null,\n        salary_text: '',\n        posted_date: j.created ? j.created.split('T')[0] : '',\n        source: 'Adzuna'\n      });\n    }\n  }\n\n  // ── The Muse (results array + page number) ───────────────────────────────\n  else if (d.results && Array.isArray(d.results) && typeof d.page === 'number') {\n    for (const j of d.results) {\n      if (!j.name) continue;\n      allJobs.push({\n        job_id:      'muse_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.name || '',\n        company:     (j.company && j.company.name) || '',\n        location:    'Remote',\n        is_remote:   true,\n        apply_url:   (j.refs && j.refs.landing_page) || '',\n        description: (j.contents || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n        salary_min:  null,\n        salary_max:  null,\n        salary_text: '',\n        posted_date: j.publication_date ? j.publication_date.split('T')[0] : '',\n        source: 'TheMuse'\n      });\n    }\n  }\n\n  // ── Remotive (jobs array) ─────────────────────────────────────────────────\n  else if (d.jobs && Array.isArray(d.jobs)) {\n    for (const j of d.jobs) {\n      allJobs.push({\n        job_id:      'remotive_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.title || '',\n        company:     j.company_name || '',\n        location:    j.candidate_required_location || 'Remote',\n        is_remote:   true,\n        apply_url:   j.url || '',\n        description: (j.description || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n        salary_min:  null,\n        salary_max:  null,\n        salary_text: j.salary || '',\n        posted_date: j.publication_date ? j.publication_date.split('T')[0] : '',\n        source: 'Remotive'\n      });\n    }\n  }\n\n  // ── Indeed via RapidAPI (hits array) ─────────────────────────────────────\n  else if (d.hits && Array.isArray(d.hits)) {\n    for (const j of d.hits) {\n      allJobs.push({\n        job_id:      'indeed_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.title || '',\n        company:     j.company || '',\n        location:    (j.location||'').toLowerCase().includes('remote') ? 'Remote' : (j.location || ''),\n        is_remote:   (j.location||'').toLowerCase().includes('remote')\n                  || ((j.title||'') + ' ' + (j.description||j.summary||'')).toLowerCase().includes('remote'),\n        apply_url:   j.url || j.link || '',\n        description: (j.description || j.summary || j.snippet || '').substring(0, 3000),\n        salary_min:  null,\n        salary_max:  null,\n        salary_text: j.salary || '',\n        posted_date: j.date || j.datePosted || '',\n        source: 'Indeed'\n      });\n    }\n  }\n\n\n  \n  // ── LinkedIn Job Search API (active-jb-24h) — array of rich objects ───────\n  else if (Array.isArray(d) && d.length > 0 && d[0].date_posted !== undefined && d[0].organization !== undefined) {\n    for (const j of d) {\n      if (!j.title) continue;\n\n      // Build location string\n      const locs = j.locations_derived || [];\n      const locStr = locs.length > 0 ? locs[0] : '';\n\n      // Remote detection: remote_derived flag, location_type TELECOMMUTE, or \"remote\" in loc/description\n      const descLower = (j.description_text || '').toLowerCase().substring(0, 500);\n      const isRemote = j.remote_derived === true\n        || j.location_type === 'TELECOMMUTE'\n        || locStr.toLowerCase().includes('remote')\n        || descLower.includes('remote');\n\n      // Salary: salary_raw is a structured object {value: [{value, unitText, currency, ...}]}\n      let salMin = null, salMax = null, salText = '';\n      if (j.salary_raw && j.salary_raw.value) {\n        const vals = j.salary_raw.value;\n        if (vals.length === 1) {\n          salMin = vals[0].value || null;\n          salText = vals[0].currency ? `${vals[0].currency} ${vals[0].value}` : String(vals[0].value || '');\n        } else if (vals.length >= 2) {\n          salMin = Math.min(...vals.map(v => v.value || 0).filter(v => v > 0)) || null;\n          salMax = Math.max(...vals.map(v => v.value || 0)) || null;\n        }\n      }\n\n      allJobs.push({\n        job_id:      'linkedin_' + (j.id || Math.random().toString(36).substr(2, 9)),\n        title:       j.title || '',\n        company:     j.organization || '',\n        location:    isRemote ? 'Remote' : locStr,\n        is_remote:   isRemote,\n        apply_url:   j.external_apply_url || j.url || '',\n        description: (j.description_text || '').substring(0, 3000),\n        salary_min:  salMin,\n        salary_max:  salMax,\n        salary_text: salText,\n        posted_date: j.date_posted ? j.date_posted.split('T')[0] : '',\n        source: 'LinkedIn'\n      });\n    }\n  }\n\n\n  // ── LinkedIn individual job object (n8n splits array → one item per job) ──\n  else if (d.linkedin_id !== undefined && d.organization !== undefined && d.title) {\n    const locs = d.locations_derived || [];\n    const locStr = locs.length > 0 ? locs[0] : '';\n    const descLower = (d.description_text || '').toLowerCase().substring(0, 500);\n    const isRemote = d.remote_derived === true\n      || d.location_type === 'TELECOMMUTE'\n      || locStr.toLowerCase().includes('remote')\n      || descLower.includes('remote');\n\n    let salMin = null, salMax = null, salText = '';\n    if (d.salary_raw && d.salary_raw.value) {\n      const vals = d.salary_raw.value;\n      if (vals.length === 1) {\n        salMin = vals[0].value || null;\n        salText = vals[0].currency ? `${vals[0].currency} ${vals[0].value}` : String(vals[0].value || '');\n      } else if (vals.length >= 2) {\n        salMin = Math.min(...vals.map(v => v.value || 0).filter(v => v > 0)) || null;\n        salMax = Math.max(...vals.map(v => v.value || 0)) || null;\n      }\n    }\n\n    allJobs.push({\n      job_id:      'linkedin_' + d.id,\n      title:       d.title || '',\n      company:     d.organization || '',\n      location:    isRemote ? 'Remote' : locStr,\n      is_remote:   isRemote,\n      apply_url:   d.external_apply_url || d.url || '',\n      description: (d.description_text || '').substring(0, 3000),\n      salary_min:  salMin,\n      salary_max:  salMax,\n      salary_text: salText,\n      posted_date: d.date_posted ? d.date_posted.split('T')[0] : '',\n      source: 'LinkedIn'\n    });\n  }\n\n  // ── Remote OK (top-level array, element 0 is legal notice) ───────────────\n  // ── Remote OK (individual job objects — n8n split the array) ─────────────\n  else if (d.position !== undefined && d.company !== undefined) {\n    allJobs.push({\n      job_id:      'remoteok_' + (d.id || Math.random().toString(36).substr(2,9)),\n      title:       d.position || '',\n      company:     d.company || '',\n      location:    'Remote',\n      is_remote:   true,\n      apply_url:   d.apply_url || d.url || '',\n      description: (d.description || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n      salary_min:  d.salary_min ? parseInt(d.salary_min) : null,\n      salary_max:  d.salary_max ? parseInt(d.salary_max) : null,\n      salary_text: '',\n      posted_date: d.date ? d.date.split('T')[0] : '',\n      source: 'RemoteOK'\n    });\n  }\n\n  else if (Array.isArray(d)) {\n    for (const j of d.slice(1)) {\n      if (!j || !j.position) continue;\n      allJobs.push({\n        job_id:      'remoteok_' + (j.id || Math.random().toString(36).substr(2,9)),\n        title:       j.position || '',\n        company:     j.company || '',\n        location:    'Remote',\n        is_remote:   true,\n        apply_url:   j.apply_url || j.url || '',\n        description: (j.description || '').replace(/<[^>]*>/g, '').substring(0, 3000),\n        salary_min:  j.salary_min ? parseInt(j.salary_min) : null,\n        salary_max:  j.salary_max ? parseInt(j.salary_max) : null,\n        salary_text: '',\n        posted_date: j.date ? j.date.split('T')[0] : '',\n        source: 'RemoteOK'\n      });\n    }\n  }\n}\n\n// ── 2026-10-10 local + remote filter (patch_lanes_local.py) ─────────────────\n// Everything above this line is the live per-source parsing, unchanged except\n// that JSearch and Adzuna now carry city/state. Below: work mode, location\n// allowlist, exclusions, dedup. Every drop is counted in filter_stats so a run\n// shows exactly where jobs went.\nconst __stats = { in: allJobs.length, kept_remote: 0, kept_local: 0, dropped: {} };\nconst __drop = (why) => { __stats.dropped[why] = (__stats.dropped[why] || 0) + 1; return false; };\n\n// Remote anywhere in the US, or on-site/hybrid in Your County, the\n// Metro Area, or ~50 miles of Your City. Each city is pinned to its state so\n// Nearby Town 5 OH, Nearby Town 6 CA, Nearby City C MS, Nearby Town 2 AZ do not pass. Nearby Town 8 and\n// Nearby Town 12 are additions to the requested list (both inside the commute area).\nconst CITY_STATE = {\n  'your city': 'WA', 'nearby town 1': 'WA', 'nearby town 2': 'WA', 'nearby town 3': 'WA',\n  'nearby town 4': 'WA', 'nearby town 5': 'WA', 'nearby town 6': 'WA', 'nearby town 7': 'WA',\n  'nearby city c': 'WA', 'nearby town 9': 'WA', 'nearby city a': 'WA', 'nearby city b': 'WA',\n  'nearby town 8': 'WA', 'metro area': 'WA', 'metro area': 'WA',\n  'nearby town 10': 'OR', 'nearby town 10': 'OR', 'nearby town 11': 'OR', 'nearby town 12': 'OR',\n};\nconst STATE_RE = { WA: /\\b(wa|washington)\\b/i, OR: /\\b(or|oregon)\\b/i };\n// JSearch labels Washington D.C. jobs \"Nearby City B, Washington\" (measured 2026-10-04).\nconst DC_HINT = /washington,?\\s*d\\.?\\s*c\\b|\\bd\\.c\\.|\\bdc metro|\\bdmv area\\b/i;\n\nfunction localCity(j) {\n  // Structured city/state first (JSearch, Adzuna), then the free-text location.\n  const tryPair = (city, stateText) => {\n    const c = (city || '').toLowerCase().trim();\n    const st = CITY_STATE[c];\n    return st && STATE_RE[st].test(stateText || '') ? c : null;\n  };\n  let c = tryPair(j.city, j.state);\n  if (!c) {\n    const loc = (j.location || '').toLowerCase();\n    for (const name of Object.keys(CITY_STATE).sort((a, b) => b.length - a.length)) {\n      if (new RegExp('(^|[^a-z])' + name + '([^a-z]|$)').test(loc) && STATE_RE[CITY_STATE[name]].test(loc)) { c = name; break; }\n    }\n  }\n  if (!c) return null;\n  if (DC_HINT.test(j.title + ' ' + (j.description || '').substring(0, 2500))) return null;\n  return c.replace(/\\b\\w/g, ch => ch.toUpperCase());\n}\n\n// Whole-word match (plural allowed): 'saic' does not hit Mosaic, 'rtx' not Artex.\nconst kwHit = (txt, k) => new RegExp('(^|[^a-z0-9])' + k.replace(/[.*+?^${}()|[\\]\\\\/]/g, '\\\\$&') + '(e?s)?([^a-z0-9]|$)').test(txt);\n\nconst DEV_TITLES = [\n  'software engineer','software developer','software development',\n  'web developer','web engineer','frontend','front-end','back-end','backend',\n  'full stack','fullstack','full-stack',\n  'mobile developer','ios developer','android developer',\n  'data engineer','data scientist','ml engineer','machine learning',\n  'application developer','application engineer',\n  'java developer','python developer','ruby developer','rails developer',\n  'react engineer','angular engineer','ui engineer','ux engineer',\n  'staff engineer','principal software',\n];\n// Network / infrastructure / sysadmin / network-security first. SRE, platform\n// and observability titles still pass (growth path) and are scored on substance.\nconst TITLE_OK = [\n  'network engineer','network administrator','network operations','network analyst',\n  'network specialist','network technician','network security','network and systems',\n  'systems and network','network/systems','network architect','firewall engineer',\n  'infrastructure engineer','infrastructure administrator','infrastructure operations',\n  'it infrastructure','infrastructure architect',\n  'systems engineer','systems administrator','system administrator','sysadmin','it systems',\n  'virtualization engineer','vmware engineer','server engineer','server administrator',\n  'data center engineer','wireless engineer','noc engineer','security engineer',\n  'it engineer','it administrator','senior engineer','security operations',\n  'hybrid cloud','cloud engineer','cloud network','cloud operations','operations engineer',\n  'platform engineer','devops','dev ops','sre','site reliability','reliability engineer',\n  'monitoring engineer','observability engineer','monitoring administrator',\n];\nconst CODE_PRIMARY = [\n  'building scalable web application','develop backend service',\n  'full-stack development','experience with react is required',\n  'ruby on rails','django framework','.net development','java spring boot',\n  'mobile application development','design and develop software product',\n  'software development lifecycle is your','you will write and maintain code',\n];\n// Clearance: title always; body only on \"must hold/obtain\" phrasings, so\n// \"no clearance required\" does not trip it.\nconst CLEARANCE_BODY = [\n  'clearance required','requires clearance','must have clearance','active secret',\n  'top secret','ts/sci','secret clearance','security clearance is required',\n  'clearance is required','active clearance','maintain a security clearance',\n  'maintain a clearance','obtain a security clearance','eligible for a security clearance',\n  'public trust clearance','public trust position','dod 8570','dod 8140',\n  'iat level ii','iat level iii',\n];\n// DoD/defense primes, federal contractors (regional federal site, national labs) and the VA.\n// State and local government is fine.\nconst FED_EMPLOYERS = [\n  'lockheed martin','raytheon','rtx','northrop grumman','booz allen','general dynamics',\n  'l3harris','bae systems','leidos','saic','caci','mantech','peraton','gdit',\n  'huntington ingalls','textron','anduril','shield ai','palantir','parsons',\n  'amentum','federal reserve','apogee','feditc',\n  'federal it consulting','department of veterans affairs','veterans affairs',\n  'veterans health administration',\n];\n// Narrow on purpose: \"As a federal contractor...\" sits in most large employers' EEO text.\nconst FED_BODY = [\n  'department of energy','doe contract','national laboratory',\n  'dod customer','support of the dod','support of dod','department of defense',\n  'federal customer','federal government client','federal agency client',\n  'supporting federal agencies','va medical center','veterans affairs medical',\n];\n// National backbone / MPLS carriers. Regional ISPs are left to the scorer.\nconst CARRIERS = [\n  'lumen','centurylink','level 3','verizon','at&t','zayo','cogent','windstream',\n  'frontier communications','gtt communications','crown castle',\n];\nconst DRUG = ['drug test','drug screen','drug-free workplace','drug free workplace',\n  'pre-employment drug','background and drug','controlled substance test'];\n\nconst DAY = 86400000;\nconst NOW = Date.now();\nconst STALE_DAYS = 14;\n\nallJobs = allJobs.filter(j => {\n  const t = (j.title || '').toLowerCase();\n  const co = (j.company || '').toLowerCase();\n  const body = (j.description || '').toLowerCase();\n\n  // Work mode + location. Boards geotag remote jobs to a city (\"Remote Business\n  // Systems Administrator\", JSearch: on-site Nearby City B), so a remote title wins.\n  if (!j.is_remote && /\\bremote\\b/.test(t) && !/\\bnot remote\\b|\\bnon-remote\\b/.test(t)) j.is_remote = true;\n  const city = j.is_remote ? '' : localCity(j);\n  if (!j.is_remote && !city) return __drop('on-site outside area');\n  j.city = city || '';\n  j.work_mode = j.is_remote ? 'Remote' : (/\\bhybrid\\b/.test(t + ' ' + body) ? 'Hybrid' : 'On-site');\n\n  if (DEV_TITLES.some(k => t.includes(k))) return __drop('dev title');\n  if (!TITLE_OK.some(k => t.includes(k))) return __drop('title not infra/network');\n  if (CODE_PRIMARY.some(k => body.substring(0, 1000).includes(k))) return __drop('coding-primary');\n\n  j.clearance_flag = t.includes('clearance') || /\\bts\\/sci\\b|\\bsecret\\b/.test(t)\n    || CLEARANCE_BODY.some(k => body.includes(k));\n  if (j.clearance_flag) return __drop('clearance');\n  if (FED_EMPLOYERS.some(k => kwHit(co, k)) || FED_BODY.some(k => body.includes(k))) return __drop('federal/defense/VA');\n  if (CARRIERS.some(k => kwHit(co, k))) return __drop('carrier');\n\n  // Boards without a date filter (Remotive, RemoteOK, Muse) keep serving old\n  // postings; past the dedup window they would be re-scored as new.\n  if (j.posted_date) {\n    const age = (NOW - Date.parse(j.posted_date)) / DAY;\n    if (age > STALE_DAYS) return __drop('posted > 14 days ago');\n  }\n\n  // Drug testing is a flag, never a filter.\n  j.drug_test_flag = DRUG.some(k => body.includes(k));\n  return true;\n});\n\n// Dedup: job_id and company+title+city, both for 14 days.\nconst sd = $getWorkflowStaticData('global');\nsd.seenJobIds = sd.seenJobIds || {};\nsd.seenKeys = sd.seenKeys || {};\nsd.companyRemote = sd.companyRemote || {};\nsd.remoteLookup = sd.remoteLookup || {};\nfor (const m of [sd.seenJobIds, sd.seenKeys]) for (const k of Object.keys(m)) if (m[k] < NOW - 14 * DAY) delete m[k];\nfor (const m of [sd.companyRemote, sd.remoteLookup]) for (const k of Object.keys(m)) if ((m[k].at || 0) < NOW - 90 * DAY) delete m[k];\n\nconst normCo = s => (s || '').toLowerCase().replace(/[.,]/g, ' ')\n  .replace(/\\b(inc|llc|ltd|corp|corporation|co|company|the)\\b/g, ' ').replace(/\\s+/g, ' ').trim();\n\n// Passive remote evidence: any remote posting seen from an employer counts.\nfor (const j of allJobs) if (j.work_mode === 'Remote' && j.company) {\n  sd.companyRemote[normCo(j.company)] = { at: NOW };\n}\n\nconst fresh = [];\nfor (const j of allJobs) {\n  const key = (j.company + '|' + j.title + '|' + j.city).toLowerCase();\n  if (sd.seenJobIds[j.job_id] || sd.seenKeys[key]) { __drop('already seen (14d)'); continue; }\n  sd.seenJobIds[j.job_id] = NOW;\n  sd.seenKeys[key] = NOW;\n  fresh.push(j);\n}\n\n// Local jobs are rare, so they go first and are never cut by the cap.\nfresh.sort((a, b) => (a.work_mode === 'Remote') - (b.work_mode === 'Remote'));\nconst CAP = 20;\nconst limited = fresh.slice(0, CAP);\nif (fresh.length > CAP) __stats.dropped['over cap (20)'] = fresh.length - CAP;\nfor (const j of limited) j.work_mode === 'Remote' ? __stats.kept_remote++ : __stats.kept_local++;\n\n// On-site/hybrid employers with no cached answer get one remote-history lookup.\nconst lookups = [];\nfor (const j of limited) {\n  if (j.work_mode === 'Remote' || !j.company) continue;\n  const k = normCo(j.company);\n  if (sd.companyRemote[k] || sd.remoteLookup[k]) continue;\n  if (!lookups.includes(j.company)) lookups.push(j.company);\n}\n\nreturn [{ json: { jobs: limited, count: limited.length, lookups: lookups.slice(0, 8), filter_stats: __stats } }];\n"
+      },
+      "id": "n9",
+      "name": "Normalize + Filter + Dedup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Scoring prompt, rewritten 2026-10-10 (patch_lanes_local.py). LANE placeholders\n// are filled per lane (cloud / security) at deploy time.\nconst { jobs, count } = $input.first().json;\n\nif (!count || count === 0) {\n  return [{ json: { jobs: [], count: 0, prompt: null } }];\n}\n\nconst jobsList = jobs.map((j, i) => {\n  const sal = j.salary_min\n    ? '$' + j.salary_min.toLocaleString() + '-$' + (j.salary_max ? j.salary_max.toLocaleString() : '?')\n    : (j.salary_text || 'Not listed');\n  return `${i+1}. Title: \"${j.title}\" | Company: \"${j.company}\" | Work mode: ${j.work_mode}${j.city ? ' (' + j.city + ')' : ''} | Remote history: ${j.remote_history || 'n/a'} | Drug-test text: ${j.drug_test_flag ? 'yes' : 'no'} | Salary: ${sal} | Source: ${j.source}\\nDescription: ${j.description.substring(0, 600)}`;\n}).join('\\n\\n');\n\nconst prompt = `You are an expert technical recruiter and career coach acting as a strict job-match scorer for a specific candidate. Analyze each job and return structured JSON.\n\nCANDIDATE PROFILE — Your Name\n- Location: Remote strongly preferred. Hybrid/onsite acceptable ONLY in Your City or the Metro Area (Nearby City A/B/C), ST. Remote-Only City counts ONLY if the role is remote. Onsite/hybrid anywhere else, or relocation, is a dealbreaker. Max 10% travel.\n- Experience: [N] years in [networking / security / infrastructure] — NOT a software developer\n- Current Role: [Title], [Employer] ([year]–present)\n  • [Scope: number of sites, users, devices]\n  • [Key platform or responsibility]\n  • [Current project]\n\n- STRONG / EXPERT skills:\n  • Routing: [e.g. BGP, OSPF, MPLS]\n  • Switching: [e.g. VLANs, QoS, vendor platforms]\n  • Wireless: [platforms]\n  • Firewalls: [vendors — config, rule lifecycle, hardening]\n  • Monitoring: [e.g. Prometheus, Grafana, SolarWinds]\n  • Systems: [OSes, hypervisors, containers]\n  • Automation: [tools — and how deep]\n  • Vendors: [list]\n\n- LIMITED / DEVELOPING:\n  • [Skill]: [honest depth — conceptual only / end-user / in training]\n  • [Skill]: [honest depth]\n\n- Certifications: [certs and degrees]\n- Salary: target ~$[N]k — a posted range that reaches $[N]k at either end is on target. More is welcome.\n- Hard dealbreakers: [e.g. onsite outside your area, relocation, clearance, drug testing, travel >10%]\n- Employer size: [preference, e.g. prefers organizations under 10,000 employees — soft flag]\n\nTARGET ROLES, in priority order: 1. Network Engineer  2. Infrastructure Engineer  3. Systems Administrator (with networking)  4. Network Security Engineer. Growth path (score on substance, no title bonus): Cloud Engineer, Platform / SRE / Observability, Network Automation.\nTHIS IS THE NETWORK SECURITY LANE. Good fit here: Network Security Engineer, Firewall Engineer,\nNGFW Engineer, Network Security Administrator, Security Infrastructure Engineer, Palo Alto / Fortinet /\nCheckpoint Engineer, VPN & Segmentation Engineer, SD-WAN / SASE (security-focused) Engineer, Network\nEngineer with a heavy security scope. ESPECIALLY desirable: hands-on firewall rule-lifecycle /\nmigration / consolidation, IPS/IDS, and PCI-DSS segmentation work.\nIMPORTANT: he wants INFRASTRUCTURE / PERIMETER security only (firewalls, IPS, VPN, segmentation) -\nNOT SOC-analyst, threat-hunting, penetration-testing, red-team, IAM, or GRC / compliance-audit roles.\n\nNOT A FIT FOR:\nSOC analyst / blue-team monitoring, penetration testing / red team, threat hunting, malware analysis,\nIAM / identity engineering, GRC / compliance-audit roles, and software/application development where\nwriting production code is the PRIMARY responsibility\n\nJOBS TO EVALUATE:\n${jobsList}\n\nSCORING RULES — apply these strictly before assigning a score:\n\nAUTOMATIC DISQUALIFIERS (score 20 or below):\n- Requires a security clearance\n- DoD / defense work, a federal contractor (regional federal contractors, national labs / national-lab operators, defense primes such as Lockheed, Raytheon, Northrop, General Dynamics, Leidos, SAIC, Booz Allen, CACI), or the VA. State and local government is FINE.\n- On-site/hybrid outside the allowed area above, or requires relocation\n- Role is primarily software/application/web development, or programming (Python/Go/Java) is the main job function\n- Role is primarily SOC-analyst, penetration-testing / red-team, threat-hunting, IAM, or GRC / compliance-audit\n\nSCORE 40 OR BELOW:\n- Employer is a telecom carrier / ISP and the job is building or running its MPLS / backbone network\n\nPENALTIES:\n- Employer clearly over 10,000 employees: minus 20 AND the final score may not exceed 65 (hard cap). Roughly 1,000-10,000: minus 4. Under 1,000: no penalty.\n- Minus 5: sprawling multi-site employer (many locations)\n- Minus 10: architect / principal / strategy role with little hands-on work\n- Minus 10: top of the posted salary range is below $120k; minus 20 instead if the top is below $95k. No penalty if the range reaches ~$120k or salary is not listed.\n- Minus 10: SRE / DevOps / platform role in SUBSTANCE (on-call software reliability, SLOs, CI/CD, writing services) — growth path, not the target\n- Minus 25: heavy coding requirements (Go/Rust/Java required, or \"you will build software\")\n- Minus 10: requires a cloud/developer certification the candidate is still pursuing\n- Minus 5: IPv6 is a major requirement (also list \"IPv6\" in missing_skills)\n- Minus 10: travel over 10%\n- Drug-test text: NO penalty. Just set drug_test_flag.\n\nBONUSES:\n- Plus 6: on-site/hybrid job in the allowed area whose employer HAS posted remote roles before (see \"Remote history\") — remote flexibility is likely\n- Plus 6: duties mix networking with servers / virtualization / cloud / monitoring (VMware, Proxmox, Linux, Windows Server, Prometheus, Grafana, SolarWinds) — his growth goal\n- Plus 5: small or local employer, state / local government, education, healthcare, utility, or agriculture/food employer\n- Plus 5: ops-heavy, hands-on infrastructure role\n- Plus 8: mentions Cisco/Juniper/Palo Alto/Fortinet/Meraki or specific network protocol experience\n- Plus 8: Avaya/VoIP/UC experience valued\n- Plus 5: PCI-DSS or compliance-focused network security\n- Plus 6: values AI-driven automation or workflow building (n8n, Claude, Ansible)\n- Plus 6: Terraform / Infrastructure-as-Code mentioned\n- Plus 10: hands-on firewall / NGFW policy, rule-lifecycle or migration work (he cut a ruleset 1,600 -> 400)\n- Plus 6: IPS/IDS (Tipping Point) emphasis\n\nSIZE: estimate the employer's headcount when it is not stated and return it in size_estimate (e.g. \"about 400\", \"1,000-10,000\", \"over 10,000\").\n\nReturn ONLY a valid JSON array — no markdown fences, no extra text:\n[{\n  \"index\": 1,\n  \"score\": 85,\n  \"fit_summary\": \"Exactly two sentences explaining the match quality and key alignment.\",\n  \"missing_skills\": \"comma-separated list of required skills not in profile, or None\",\n  \"red_flags\": \"salary below $120k, travel, employer size, architect-only, drug test, etc — or None\",\n  \"tags\": [\"Cisco\", \"Fortinet\", \"VMware\"],\n  \"role_type\": \"Network Engineer\",\n  \"size_estimate\": \"about 400\",\n  \"clearance_flag\": false,\n  \"drug_test_flag\": false,\n  \"resume_tips\": [\n    \"Lead with your BGP/OSPF and Fortinet SD-WAN work\",\n    \"Add Proxmox/VMware homelab virtualization to skills\"\n  ],\n  \"cover_letter_hook\": \"Two to three sentences for an opening paragraph tailored specifically to this company and role.\"\n}]\n\nScoring guide: 90-100=perfect fit, 80-89=strong match, 70-79=good candidate, 50-69=possible stretch, <50=poor fit. IMPORTANT: only jobs scoring 70 or higher are saved and reported to the candidate — be honest and do not inflate scores to clear this bar.\nrole_type must be one of: Network Engineer, Infrastructure Engineer, Systems Administrator, Network Security Engineer, Cloud Engineer, Platform Engineer, SRE, DevOps, Network Architect, Other\ntags: up to 8 key technology/skill tags extracted directly from the job description\nresume_tips: 3-5 specific actionable bullets referencing the candidate's actual network/infra experience — include relevant confirmed skills not yet on resume (Meraki, Avaya VoIP, OSPF/MPLS, PCI-DSS, Palo Alto, Fortinet, AI workflow automation with n8n/Claude/Grok, SolarWinds/Elasticsearch monitoring) where they fit\ncover_letter_hook: reference the company or role specifically, not generic`;\n\nreturn [{ json: { jobs, prompt } }];\n"
+      },
+      "id": "n10",
+      "name": "Format Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: \"claude-haiku-4-5-20251001\", max_tokens: 8192, messages: [{ role: \"user\", content: ($json.prompt || \"No new jobs to score.\") }] }) }}",
+        "options": {}
+      },
+      "id": "n11",
+      "name": "Claude AI Score",
+      "position": [
+        1856,
+        464
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic (Claude)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst { jobs } = $('Format Claude Prompt').first().json;\n\nif (!jobs || jobs.length === 0) {\n  return [{ json: { noJobs: true, message: 'No new jobs this run.' } }];\n}\n\nlet scores = [];\ntry {\n  const raw = ((resp.content || []).find(b => b.type === 'text') || {}).text || '';\n  let cleaned = raw.replace(/```json\\s*/g, '').replace(/```\\s*/g, '').trim();\n  const arrStart = cleaned.indexOf('[');\n  const arrEnd   = cleaned.lastIndexOf(']');\n  if (arrStart !== -1 && arrEnd !== -1 && arrEnd > arrStart) {\n    cleaned = cleaned.substring(arrStart, arrEnd + 1);\n  }\n  scores = JSON.parse(cleaned);\n} catch(e) {\n  scores = jobs.map((j, i) => ({\n    index: i + 1, score: 50,\n    fit_summary: 'Auto-scored (parse error).',\n    missing_skills: 'Unknown', red_flags: 'None',\n    tags: [], role_type: 'Other',\n    resume_tips: ['Review job description manually.'],\n    cover_letter_hook: 'Please review this position and customize your cover letter accordingly.'\n  }));\n}\n\nreturn jobs.map((job, i) => {\n  const s = scores.find(x => x.index === i + 1) || {\n    score: 50, fit_summary: 'Not scored.',\n    missing_skills: 'Unknown', red_flags: 'None',\n    tags: [], role_type: 'Other',\n    resume_tips: [], cover_letter_hook: ''\n  };\n  return { json: {\n    ...job,\n    score:             s.score,\n    fit_summary:       s.fit_summary,\n    missing_skills:    s.missing_skills,\n    red_flags:         s.red_flags,\n    tags:              Array.isArray(s.tags) ? s.tags : [],\n    role_type:         s.role_type || 'Other',\n    size_estimate:     s.size_estimate || 'Unknown',\n    clearance_flag:    job.clearance_flag === true || s.clearance_flag === true,\n    drug_test_flag:    job.drug_test_flag === true || s.drug_test_flag === true,\n    resume_tips:       Array.isArray(s.resume_tips) ? s.resume_tips : [s.resume_tips || ''],\n    cover_letter_hook: s.cover_letter_hook || ''\n  }};\n});\n"
+      },
+      "id": "n12",
+      "name": "Parse Scores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2064,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Needs these Notion properties (added 2026-10-10): Work Mode (select),\n// City (text), Remote History (text), Drug Test Flag (select), Employer Size (text).\nconst THRESHOLD = 70;\nconst results = [];\nconst today = new Date().toISOString().split('T')[0];\n\nfunction descBlocks(text) {\n  const blocks = [];\n  const safe = (text || '').substring(0, 9500);\n  if (!safe) {\n    return [{object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content:'(no description available)'}}]}}];\n  }\n  for (let i = 0; i < safe.length; i += 1900) {\n    blocks.push({\n      object:'block', type:'paragraph',\n      paragraph:{rich_text:[{type:'text',text:{content:safe.substring(i, i+1900)}}]}\n    });\n  }\n  return blocks;\n}\n\nfunction h2(text) {\n  return {object:'block',type:'heading_2',heading_2:{rich_text:[{type:'text',text:{content:text}}]}};\n}\nfunction divider() { return {object:'block',type:'divider',divider:{}}; }\nfunction bullet(text) {\n  return {object:'block',type:'bulleted_list_item',\n    bulleted_list_item:{rich_text:[{type:'text',text:{content:text.substring(0,2000)}}]}};\n}\nfunction para(text) {\n  return {object:'block',type:'paragraph',\n    paragraph:{rich_text:[{type:'text',text:{content:(text||'').substring(0,2000)}}]}};\n}\nconst rt = (s, n) => [{ text: { content: String(s || '').substring(0, n) } }];\n\nfor (const item of $input.all()) {\n  const j = item.json;\n\n  if (j.noJobs || !j.title) continue;\n  if (j.score < THRESHOLD) continue;\n\n  const tips = Array.isArray(j.resume_tips)\n    ? j.resume_tips.filter(t => t && t !== 'None')\n    : [];\n\n  const children = [\n    h2('📋 Full Job Description'),\n    ...descBlocks(j.description),\n    divider(),\n    h2('🎯 Resume Customization Tips'),\n    ...(tips.length > 0\n      ? tips.slice(0,8).map(t => bullet(t))\n      : [para('No specific tips generated.')]),\n    divider(),\n    h2('✉️ Cover Letter Hook'),\n    para(j.cover_letter_hook || 'Not generated.'),\n  ];\n\n  const priority = j.score >= 80 ? 'High' : 'Medium';\n  const tagsValue = [{name: '🛡 Security Lane'}].concat((j.tags || []).slice(0, 9).map(t => ({name: String(t).replace(/,/g, ' ').substring(0,100)})));\n  const tipsShort = tips.slice(0,3).join(' | ').substring(0,500) || 'None';\n  const clShort   = (j.cover_letter_hook || 'None').substring(0,500);\n\n  const body = {\n    parent: { database_id: \"YOUR_NOTION_DB_SECURITY\" },\n    properties: {\n      \"Job Title\":          { title:        rt(j.title, 200) },\n      \"Company\":            { rich_text:    rt(j.company, 200) },\n      \"Source\":             { select:       { name: j.source || 'JSearch' } },\n      \"Apply URL\":          { url: j.apply_url || null },\n      \"Location\":           { rich_text:    rt(j.location, 200) },\n      \"Salary Min\":         { number: j.salary_min || null },\n      \"Salary Max\":         { number: j.salary_max || null },\n      \"Score\":              { number: j.score || 0 },\n      \"Fit Summary\":        { rich_text:    rt(j.fit_summary, 2000) },\n      \"Missing Skills\":     { rich_text:    rt(j.missing_skills || 'None', 500) },\n      \"Red Flags\":          { rich_text:    rt(j.red_flags || 'None', 500) },\n      \"Tags\":               { multi_select: tagsValue },\n      \"Role Type\":          { select:       { name: j.role_type || 'Other' } },\n      \"Priority\":           { select:       { name: priority } },\n      \"Resume Tips\":        { rich_text:    rt(tipsShort, 500) },\n      \"Cover Letter Draft\": { rich_text:    rt(clShort, 500) },\n      \"Status\":             { select:       { name: 'New' } },\n      \"Date Found\":         { date:         { start: today } },\n      \"Posted Date\":        { rich_text:    rt(j.posted_date, 50) },\n      \"Job ID\":             { rich_text:    rt(j.job_id, 200) },\n      \"Work Mode\":          { select:       { name: j.work_mode || 'Remote' } },\n      \"City\":               { rich_text:    rt(j.city, 100) },\n      \"Remote History\":     { rich_text:    rt(j.remote_history, 200) },\n      \"Drug Test Flag\":     { select:       { name: j.drug_test_flag ? 'Yes' : 'No' } },\n      \"Employer Size\":      { rich_text:    rt(j.size_estimate, 100) }\n    },\n    children: children\n  };\n\n  results.push({ json: { ...j, notionBody: JSON.stringify(body) } });\n}\n\nreturn results;\n"
+      },
+      "id": "n13a",
+      "name": "Prepare Notion Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notionBody }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 400
+            }
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi"
+      },
+      "id": "n13",
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2656,
+        224
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "",
+          "name": "Notion (Job Scout)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "const THRESHOLD = 70;\nconst items = $input.all().filter(it => it && it.json && !it.json.noJobs && typeof it.json.score === 'number' && it.json.score >= THRESHOLD);\nif (!items.length) {\n  return []; // no qualifying (score >= 70) jobs — stay silent, no ping\n}\n\nconst sorted = [...items].sort((a,b) => b.json.score - a.json.score);\nconst top5  = sorted.slice(0, 5);\nconst top20 = sorted.slice(0, 20);\nconst today = new Date().toLocaleDateString('en-US',\n  {weekday:'long',year:'numeric',month:'long',day:'numeric'});\nconst NOTION = 'https://www.notion.so/YOUR_NOTION_DB_URL';\n\nfunction cleanUrl(url) {\n  try { return url.split('?')[0]; } catch(e) { return url; }\n}\nconst where = j => j.work_mode === 'Remote' ? 'Remote' : `${j.work_mode} · ${j.city || '?'}`;\nconst salary = j => j.salary_min\n  ? '$' + Math.round(j.salary_min/1000) + 'k-' + Math.round((j.salary_max||j.salary_min)/1000) + 'k'\n  : (j.salary_text || 'salary not listed');\nconst flags = j => [\n  j.drug_test_flag ? '💊 drug test' : '',\n  j.work_mode !== 'Remote' && /^Yes/.test(j.remote_history || '') ? '🏠 has remote roles' : '',\n  /over 10,?000/i.test(j.size_estimate || '') ? '🏢 10k+ employees' : '',\n].filter(Boolean);\n\nconst srcEmoji = {\n  JSearch:'🔷', Adzuna:'🟢', Remotive:'🟣', Indeed:'🔶',\n  RemoteOK:'⚫', TheMuse:'🌸', LinkedIn:'🔵'\n};\n\n// ── Discord ───────────────────────────────────────────────────────────────────\nlet discord = `**🔍 Job Scout (Security) — ${today}** | ${items.length} match(es) ≥${THRESHOLD}\n\n`;\nfor (const item of top5) {\n  const j = item.json;\n  const badge = srcEmoji[j.source] || '⚪';\n  const summary = (j.fit_summary || '').length > 100 ? j.fit_summary.substring(0,97) + '...' : (j.fit_summary || '');\n  const f = flags(j);\n  const line = `**${j.score}** — **${j.title}** @ ${j.company} ${badge}\n📍 ${where(j)} · \\`${salary(j)}\\`${f.length ? ' · ' + f.join(' · ') : ''}\n${summary}\n${cleanUrl(j.apply_url)}\n\n`;\n  if ((discord + line).length < 1800) discord += line;\n}\ndiscord += `📋 Email has full report | [Notion](<${NOTION}>)\\n👉 **Open Notion → change Status to Applied when you apply!**`;\n\n// ── Email ─────────────────────────────────────────────────────────────────────\nlet emailRows = '';\nfor (const item of top20) {\n  const j = item.json;\n  const sal = j.salary_min\n    ? '$' + j.salary_min.toLocaleString() + (j.salary_max ? '-$' + j.salary_max.toLocaleString() : '+')\n    : (j.salary_text || 'Not listed');\n  const c = j.score >= 80 ? '#2d8a4e' : '#d4940a';\n  const modeColor = j.work_mode === 'Remote' ? '#2980b9' : '#8e44ad';\n  const tagHtml = j.tags && j.tags.length\n    ? '<span style=\"margin-top:4px;display:block\">'\n      + j.tags.slice(0,6).map(t => `<span style=\"background:#e8f4f8;color:#2980b9;padding:2px 6px;border-radius:10px;font-size:11px;margin-right:3px\">${t}</span>`).join('')\n      + '</span>'\n    : '';\n  const f = flags(j);\n  emailRows += '<tr style=\"border-bottom:1px solid #eee\">'\n    + `<td style=\"padding:12px;width:60px;text-align:center\"><span style=\"background:${c};color:white;padding:4px 8px;border-radius:12px;font-weight:bold\">${j.score}</span>`\n    + `<br><span style=\"font-size:11px;color:#999\">${j.source}</span></td>`\n    + `<td style=\"padding:12px\"><strong><a href=\"${j.apply_url}\" style=\"color:#2c3e50;text-decoration:none\">${j.title}</a></strong><br>`\n    + `<span style=\"color:#666\">${j.company}</span> &nbsp;|&nbsp; `\n    + `<span style=\"color:${modeColor};font-size:13px;font-weight:bold\">${where(j)}</span> &nbsp;|&nbsp; `\n    + `<span style=\"color:#27ae60;font-size:13px\">${sal}</span><br>`\n    + `<span style=\"color:#888;font-size:12px\">Size: ${j.size_estimate || 'Unknown'} &nbsp;|&nbsp; Remote history: ${j.remote_history || 'n/a'} &nbsp;|&nbsp; Drug test: ${j.drug_test_flag ? '<b style=\"color:#c0392b\">mentioned</b>' : 'not mentioned'}</span>`\n    + (f.length ? `<br><span style=\"font-size:12px\">${f.join(' &nbsp; ')}</span>` : '')\n    + `<span style=\"color:#555;font-size:13px;display:block;margin-top:4px\">${j.fit_summary}</span>`\n    + tagHtml\n    + `<span style=\"color:#e67e22;font-size:12px;display:block;margin-top:3px\">`\n    + (j.resume_tips && j.resume_tips.length ? '📝 ' + (j.resume_tips[0]||'') : '') + '</span>'\n    + (j.missing_skills && j.missing_skills !== 'None' ? `<span style=\"color:#e67e22;font-size:12px\">⚠ Missing: ${j.missing_skills}</span>` : '')\n    + (j.red_flags && j.red_flags !== 'None' ? `<span style=\"color:#e74c3c;font-size:12px;display:block\">🚩 ${j.red_flags}</span>` : '')\n    + `<span style=\"color:#aaa;font-size:12px\"> Posted: ${j.posted_date||'Unknown'}</span>`\n    + '</td></tr>';\n}\n\n// Filter counts for this run, so it is visible that local jobs get through.\nlet statsHtml = '';\ntry {\n  const s = $('Normalize + Filter + Dedup').first().json.filter_stats;\n  const d = Object.entries(s.dropped || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || 'none';\n  statsHtml = `<p style=\"color:#888;font-size:12px\">This run: ${s.in} jobs in → ${s.kept_remote} remote + ${s.kept_local} local sent to scoring. Dropped — ${d}.</p>`;\n} catch (e) {}\n\nconst emailHtml = `<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;max-width:850px;margin:0 auto;color:#333\">\n<h2 style=\"color:#2c3e50;border-bottom:3px solid #3498db;padding-bottom:10px\">🔍 Job Scout (Security) — ${today}</h2>\n<p>Found <strong>${items.length} job(s) scoring ${THRESHOLD}+</strong>. Showing top ${Math.min(20,items.length)}. <a href=\"${NOTION}\">View all in Notion →</a></p>\n<table style=\"width:100%;border-collapse:collapse\">\n<thead><tr style=\"background:#3498db;color:white\"><th style=\"padding:10px\">Score</th><th style=\"padding:10px;text-align:left\">Job Details</th></tr></thead>\n<tbody>${emailRows}</tbody></table>\n${statsHtml}\n<p style=\"margin-top:20px;color:#888;font-size:13px\">\n  <strong>Tip:</strong> Jobs scoring 80+ are high priority — open their Notion page for tailored resume tips and cover letter draft.\n</p>\n</body></html>`;\n\nreturn [{ json: {\n  discord_content: discord,\n  email_html:      emailHtml,\n  email_subject:   `Job Scout (Security): ${items.length} match(es) — ${today}`,\n  has_jobs: true\n} }];\n"
+      },
+      "id": "n14",
+      "name": "Build Reports",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "={{ $json.discord_content }}",
+        "options": {
+          "username": "Job Scout"
+        }
+      },
+      "id": "n15",
+      "name": "Discord Alert",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        2512,
+        704
+      ],
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "",
+          "name": "Discord Webhook - Job Scout"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "you@example.com",
+        "toEmail": "you@example.com",
+        "subject": "={{ $json.email_subject }}",
+        "html": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "n17",
+      "name": "Send Gmail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2736,
+        704
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "",
+          "name": "Gmail SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "id": "notion_rate_limit_wait_01",
+      "name": "Notion Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://linkedin-job-search-api.p.rapidapi.com/active-jb-24h",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "title_filter",
+              "value": "\"network security engineer\" OR \"firewall engineer\" OR \"ngfw engineer\" OR \"security infrastructure engineer\" OR \"network security administrator\" OR \"palo alto engineer\" OR \"fortinet engineer\""
+            },
+            {
+              "name": "location_filter",
+              "value": "\"United States\""
+            },
+            {
+              "name": "description_type",
+              "value": "text"
+            },
+            {
+              "name": "limit",
+              "value": "25"
+            },
+            {
+              "name": "offset",
+              "value": "0"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-rapidapi-host",
+              "value": "linkedin-job-search-api.p.rapidapi.com"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "linkedin_src_01",
+      "name": "LinkedIn Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        240
+      ],
+      "disabled": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "RapidAPI Key (job scouts)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.adzuna.com/v1/api/jobs/us/search/1",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "YOUR_ADZUNA_APP_ID"
+            },
+            {
+              "name": "category",
+              "value": "it-jobs"
+            },
+            {
+              "name": "title_only",
+              "value": "1"
+            },
+            {
+              "name": "what_or",
+              "value": "firewall security ngfw paloalto fortinet checkpoint segmentation vpn"
+            },
+            {
+              "name": "results_per_page",
+              "value": "20"
+            },
+            {
+              "name": "sort_by",
+              "value": "date"
+            },
+            {
+              "name": "max_days_old",
+              "value": "14"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth"
+      },
+      "id": "adzuna_src_01",
+      "name": "Adzuna Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        432
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "",
+          "name": "Adzuna app_key (job scouts)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://remotive.com/api/remote-jobs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "category",
+              "value": "devops-sysadmin"
+            },
+            {
+              "name": "limit",
+              "value": "20"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "remotive_src_01",
+      "name": "Remotive Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        608
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mab",
+      "name": "Merge AB",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        -64
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mcd",
+      "name": "Merge CD",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        288
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mef",
+      "name": "Merge EF",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        624
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mgh",
+      "name": "Merge GH",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        704,
+        960
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mabcd",
+      "name": "Merge ABCD",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        944,
+        112
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mefgh",
+      "name": "Merge EFGH",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        944,
+        800
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n_mall",
+      "name": "Merge All",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1248,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://jsearch.p.rapidapi.com/search-v2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "network security engineer OR firewall engineer OR NGFW engineer remote"
+            },
+            {
+              "name": "num_pages",
+              "value": "2"
+            },
+            {
+              "name": "date_posted",
+              "value": "week"
+            },
+            {
+              "name": "work_from_home",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "jsearch.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "n4",
+      "name": "JSearch - SRE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        -208
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "RapidAPI Key (job scouts)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://jsearch.p.rapidapi.com/search-v2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "firewall engineer OR network security engineer OR Palo Alto OR Fortinet OR network segmentation remote"
+            },
+            {
+              "name": "num_pages",
+              "value": "2"
+            },
+            {
+              "name": "date_posted",
+              "value": "week"
+            },
+            {
+              "name": "work_from_home",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "jsearch.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "n5",
+      "name": "JSearch - Network Eng",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        48
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "RapidAPI Key (job scouts)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://indeed-api.p.rapidapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "network security engineer OR firewall engineer OR NGFW engineer OR Palo Alto engineer"
+            },
+            {
+              "name": "location",
+              "value": "remote"
+            },
+            {
+              "name": "page",
+              "value": "1"
+            },
+            {
+              "name": "country",
+              "value": "us"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "indeed-api.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "n_indeed",
+      "name": "Indeed Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        768
+      ],
+      "disabled": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "RapidAPI Key (job scouts)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://remoteok.com/api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (job-search-bot/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "n_remoteok",
+      "name": "Remote OK Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.themuse.com/api/public/jobs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "category",
+              "value": "IT"
+            },
+            {
+              "name": "page",
+              "value": "0"
+            },
+            {
+              "name": "descending",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "n_muse",
+      "name": "The Muse Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        1248
+      ]
+    },
+    {
+      "id": "aicost0a",
+      "name": "Build Cost Line",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        704
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "jsCode": "\n// Emit this call's token spend to InfluxDB. Runs as a side branch off the\n// Claude node so the pipeline is never gated on a cost write.\n// Pricing mirrors scripts/log-ai-cost.sh in the NOLA repo - USD per 1M tokens,\n// verified 2026-08-26.\nconst resp = $input.first().json;\nconst u = resp.usage || {};\n\nconst model        = resp.model || 'unknown';\nconst inputTokens  = u.input_tokens  || 0;\nconst outputTokens = u.output_tokens || 0;\n// Present only when the request used prompt caching.\nconst cacheRead    = u.cache_read_input_tokens     || 0;\nconst cacheWrite   = u.cache_creation_input_tokens || 0;\n\nlet inCpm, outCpm;\nif      (model.includes('haiku'))    { inCpm =  1.00; outCpm =  5.00; }\nelse if (model.includes('sonnet-5')) { inCpm =  2.00; outCpm = 10.00; }\nelse if (model.includes('sonnet'))   { inCpm =  3.00; outCpm = 15.00; }\nelse if (model.includes('opus'))     { inCpm =  5.00; outCpm = 25.00; }\nelse if (model.includes('fable'))    { inCpm = 10.00; outCpm = 50.00; }\nelse                                 { inCpm =  1.00; outCpm =  5.00; }\n\n// tokens * (USD per 1M) lands directly in micro-dollars, which keeps the field\n// an integer in InfluxDB. Cache reads bill at 0.1x input, writes at 1.25x (5m TTL).\nconst micro = Math.round(\n  inputTokens  * inCpm  +\n  outputTokens * outCpm +\n  cacheRead    * inCpm * 0.10 +\n  cacheWrite   * inCpm * 1.25\n);\n\nconst esc = s => String(s).replace(/[ ,=]/g, '\\\\$&');\n\nconst line =\n  `ai_cost,workflow=${esc('job-scout-security')},model=${esc(model)} ` +\n  `input_tokens=${inputTokens}i,output_tokens=${outputTokens}i,` +\n  `cache_read_tokens=${cacheRead}i,cache_write_tokens=${cacheWrite}i,` +\n  `cost_microdollars=${micro}i ${Date.now() * 1000000}`;\n\nreturn [{ json: { line, model, micro } }];\n"
+      }
+    },
+    {
+      "id": "aicost0b",
+      "name": "Log AI Cost",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2064,
+        704
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "http://YOUR_INFLUXDB_HOST:8086/api/v2/write?org=YOUR_ORG&bucket=ai_cost&precision=ns",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain; charset=utf-8",
+        "body": "={{ $json.line }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "InfluxDB ai_cost writer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "lookups-gt-0",
+              "leftValue": "={{ $json.lookups.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "any-lookups-20261010",
+      "name": "Any Lookups?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1608,
+        664
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per on-site/hybrid employer that needs a remote-history lookup.\nconst { lookups } = $input.first().json;\nreturn lookups.map(company => ({ json: { company, query: `${company} remote` } }));\n"
+      },
+      "id": "companies-to-check-20261010",
+      "name": "Companies To Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1828,
+        584
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://jsearch.p.rapidapi.com/search-v2",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "num_pages",
+              "value": "1"
+            },
+            {
+              "name": "date_posted",
+              "value": "all"
+            },
+            {
+              "name": "country",
+              "value": "us"
+            },
+            {
+              "name": "work_from_home",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "jsearch.p.rapidapi.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1200
+            }
+          }
+        }
+      },
+      "id": "remote-history-lookup-20261010",
+      "name": "Remote History Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2048,
+        584
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "RapidAPI Key (job scouts)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Record each lookup's yes/no per employer (cached 90 days in static data) and\n// label every job's remote history. Runs on both IF branches; when no lookup\n// ran, the two node references below throw and are treated as empty.\nconst src = $('Normalize + Filter + Dedup').first().json;\nconst sd = $getWorkflowStaticData('global');\nsd.remoteLookup = sd.remoteLookup || {};\nsd.companyRemote = sd.companyRemote || {};\nconst NOW = Date.now();\nconst normCo = s => (s || '').toLowerCase().replace(/[.,]/g, ' ')\n  .replace(/\\b(inc|llc|ltd|corp|corporation|co|company|the)\\b/g, ' ').replace(/\\s+/g, ' ').trim();\n\nlet companies = [], results = [];\ntry { companies = $('Companies To Check').all().map(i => i.json.company); } catch (e) {}\ntry { results = $('Remote History Lookup').all(); } catch (e) {}\n\ncompanies.forEach((company, i) => {\n  const r = results[i] && results[i].json;\n  // /search-v2 wraps results as data.jobs; /search returned a bare data array.\n  const list = r && r.data && (Array.isArray(r.data) ? r.data : r.data.jobs);\n  if (!Array.isArray(list)) return;   // failed/429 lookup: not cached, retried next run\n  const want = normCo(company);\n  // Whole normalized name must match, so \"City of Nearby City C\" is not \"City of Nearby City B\".\n  const hits = list.filter(x => x.job_is_remote === true && normCo(x.employer_name) === want);\n  sd.remoteLookup[want] = { at: NOW, hasRemote: hits.length > 0, count: hits.length };\n});\n\nconst jobs = (src.jobs || []).map(j => {\n  let remote_history;\n  if (j.work_mode === 'Remote') remote_history = 'Remote role';\n  else {\n    const k = normCo(j.company);\n    const c = sd.remoteLookup[k];\n    if (sd.companyRemote[k]) remote_history = 'Yes - remote posting seen';\n    else if (c && c.hasRemote) remote_history = `Yes - ${c.count} remote posting(s) found`;\n    else if (c) remote_history = 'No remote postings found';\n    else remote_history = 'Not checked';\n  }\n  return { ...j, remote_history };\n});\nreturn [{ json: { jobs, count: jobs.length, filter_stats: src.filter_stats } }];\n"
+      },
+      "id": "apply-history-20261010",
+      "name": "Apply History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2268,
+        664
+      ]
+    }
+  ],
+  "connections": {
+    "Normalize + Filter + Dedup": {
+      "main": [
+        [
+          {
+            "node": "Any Lookups?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude AI Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI Score": {
+      "main": [
+        [
+          {
+            "node": "Parse Scores",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Cost Line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Scores": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notion Body",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Reports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notion Body": {
+      "main": [
+        [
+          {
+            "node": "Notion Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reports": {
+      "main": [
+        [
+          {
+            "node": "Discord Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 7AM": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Adzuna Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remotive Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - SRE",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - Network Eng",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Indeed Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remote OK Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "The Muse Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On Demand": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Adzuna Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remotive Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - SRE",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch - Network Eng",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Indeed Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remote OK Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "The Muse Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Search": {
+      "main": [
+        [
+          {
+            "node": "Merge GH",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Adzuna Search": {
+      "main": [
+        [
+          {
+            "node": "Merge CD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remotive Search": {
+      "main": [
+        [
+          {
+            "node": "Merge CD",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "JSearch - SRE": {
+      "main": [
+        [
+          {
+            "node": "Merge AB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSearch - Network Eng": {
+      "main": [
+        [
+          {
+            "node": "Merge AB",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Indeed Search": {
+      "main": [
+        [
+          {
+            "node": "Merge EF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remote OK Search": {
+      "main": [
+        [
+          {
+            "node": "Merge EF",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "The Muse Search": {
+      "main": [
+        [
+          {
+            "node": "Merge GH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge AB": {
+      "main": [
+        [
+          {
+            "node": "Merge ABCD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge CD": {
+      "main": [
+        [
+          {
+            "node": "Merge ABCD",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge EF": {
+      "main": [
+        [
+          {
+            "node": "Merge EFGH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge GH": {
+      "main": [
+        [
+          {
+            "node": "Merge EFGH",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge ABCD": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge EFGH": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge All": {
+      "main": [
+        [
+          {
+            "node": "Normalize + Filter + Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Cost Line": {
+      "main": [
+        [
+          {
+            "node": "Log AI Cost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Lookups?": {
+      "main": [
+        [
+          {
+            "node": "Companies To Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Apply History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Companies To Check": {
+      "main": [
+        [
+          {
+            "node": "Remote History Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remote History Lookup": {
+      "main": [
+        [
+          {
+            "node": "Apply History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply History": {
+      "main": [
+        [
+          {
+            "node": "Format Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
